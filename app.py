@@ -468,20 +468,38 @@ def show_sidebar():
         st.markdown("### Release Estimation")
         st.markdown("---")
 
-        if st.button("Your Teams", use_container_width=True):
+        if st.button("Manage Teams", use_container_width=True):
             st.session_state["page"] = "teams"
             st.rerun()
 
-        team_id = st.session_state.get("current_team_id")
-        if team_id:
-            team_name = st.session_state.get("current_team_name", "Team")
-            st.markdown(f"**{team_name}**")
-            if st.button("Estimation", use_container_width=True):
-                st.session_state["page"] = "estimation"
+        # Team selector dropdown
+        teams = get_teams()
+        if teams:
+            team_names = [t["name"] for t in teams]
+            current_id = st.session_state.get("current_team_id")
+            current_idx = next((i for i, t in enumerate(teams) if t["id"] == current_id), 0)
+
+            selected_idx = st.selectbox(
+                "Team",
+                range(len(team_names)),
+                format_func=lambda i: team_names[i],
+                index=current_idx,
+            )
+            selected_team = teams[selected_idx]
+
+            if selected_team["id"] != current_id:
+                st.session_state["current_team_id"]   = selected_team["id"]
+                st.session_state["current_team_name"] = selected_team["name"]
+                st.session_state["page"]              = "estimation"
                 st.rerun()
-            if st.button("Configuration", use_container_width=True):
-                st.session_state["page"] = "configuration"
-                st.rerun()
+
+            if st.session_state.get("current_team_id"):
+                if st.button("Estimation", use_container_width=True):
+                    st.session_state["page"] = "estimation"
+                    st.rerun()
+                if st.button("Configuration", use_container_width=True):
+                    st.session_state["page"] = "configuration"
+                    st.rerun()
 
         st.markdown("---")
         if st.button("Log Out", use_container_width=True):
