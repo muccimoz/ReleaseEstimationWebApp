@@ -80,12 +80,12 @@ def compute_estimate(
     # Mirrors Excel's NORM.INV(1 - desired_confidence, mean, std_dev)
     guaranteed_min = norm.ppf(1 - desired_confidence, loc=pert_mean, scale=std_dev)
 
-    # Sprints needed (raw and rounded up — partial sprint = full sprint)
+    # Sprints needed (raw; ceil used for display only — tells user which sprint they finish in)
     sprints_raw     = backlog / guaranteed_min
     sprints_rounded = math.ceil(sprints_raw)
 
-    # Weeks and calendar days
-    business_weeks = sprint_weeks * sprints_rounded
+    # Weeks and calendar days — rounded at weeks level to match spreadsheet
+    business_weeks = round(sprint_weeks * sprints_raw)
     total_days     = business_weeks * 7 + extra_days
 
     # Projected completion date

@@ -742,14 +742,14 @@ def page_estimation():
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Projected Date",  result["projected_date"].strftime("%b %d, %Y"))
     c2.metric("Confidence",      f"{desired_confidence:.0%}")
-    c3.metric("Sprints Needed",  result["sprints_rounded"])
+    c3.metric("Sprint Completed In", f"Sprint {result['sprints_rounded']}")
     c4.metric("Business Weeks",  result["business_weeks"])
 
     st.markdown(
         f"At **{desired_confidence:.0%} confidence**, your team will complete "
         f"**{release['name']}** by **{result['projected_date'].strftime('%B %d, %Y')}**. "
         f"This assumes completing at least **{result['guaranteed_min']:.1f} points per sprint** "
-        f"across **{result['sprints_rounded']} sprints** ({result['business_weeks']} business weeks)."
+        f"finishing in **Sprint {result['sprints_rounded']}** ({result['business_weeks']} business weeks)."
     )
 
     with st.expander("Calculation Details"):
@@ -758,7 +758,7 @@ def page_estimation():
         col1.write(f"Statistical std deviation: {result['std_dev']:.2f}")
         col1.write(f"Guaranteed minimum velocity: {result['guaranteed_min']:.2f} pts/sprint")
         col2.write(f"Raw sprints needed: {result['sprints_raw']:.2f}")
-        col2.write(f"Rounded sprints: {result['sprints_rounded']}")
+        col2.write(f"Sprint completed in: Sprint {result['sprints_rounded']}")
         col2.write(f"Total calendar days: {result['total_days']}")
 
 
