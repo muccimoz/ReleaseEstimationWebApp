@@ -22,6 +22,7 @@ section[data-testid="stSidebar"] .stButton > button {
     width: 100%; text-align: left;
 }
 section[data-testid="stSidebar"] .stButton > button:hover {background-color: #34495e;}
+section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] * {color: #000000 !important;}
 </style>
 """, unsafe_allow_html=True)
 
