@@ -36,7 +36,6 @@ def compute_estimate(
     backlog: float,
     sprint_weeks: int,
     start_date: date,
-    rounding_decimal: float = 0.3,
     std_dev_override: float = None,
     extra_days: int = 0,
 ) -> dict:
@@ -53,7 +52,6 @@ def compute_estimate(
     backlog             : total story points / issues in the release
     sprint_weeks        : sprint length in weeks
     start_date          : release start date
-    rounding_decimal    : forces fractional sprint counts toward the next integer
     std_dev_override    : optional — use this std dev instead of the derived one
     extra_days          : optional extra calendar days to add (e.g. holidays)
 
@@ -82,9 +80,9 @@ def compute_estimate(
     # Mirrors Excel's NORM.INV(1 - desired_confidence, mean, std_dev)
     guaranteed_min = norm.ppf(1 - desired_confidence, loc=pert_mean, scale=std_dev)
 
-    # Sprints needed (raw and rounded)
+    # Sprints needed (raw and rounded up — partial sprint = full sprint)
     sprints_raw     = backlog / guaranteed_min
-    sprints_rounded = math.floor(sprints_raw + rounding_decimal + 0.5)
+    sprints_rounded = math.ceil(sprints_raw)
 
     # Weeks and calendar days
     business_weeks = sprint_weeks * sprints_rounded
