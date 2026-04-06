@@ -671,13 +671,6 @@ def page_estimation():
     desired_confidence = desired_pct / 100
 
     with st.expander("Advanced Options"):
-        rounding = st.number_input(
-            "Rounding Decimal (0.1–0.9) — controls when fractional sprints round up",
-            min_value=0.1, max_value=0.9,
-            value=float(scenario.get("rounding_decimal") or 0.3),
-            step=0.1, format="%.1f",
-            key=f"rd_{release_id}",
-        )
         sdo_val = st.number_input(
             "Standard Deviation Override (leave at 0 to use the calculated value)",
             min_value=0.0,
@@ -703,7 +696,6 @@ def page_estimation():
             "best_case":          best_case,
             "confidence_label":   confidence_label,
             "desired_confidence": desired_confidence,
-            "rounding_decimal":   rounding,
             "std_dev_override":   std_dev_override,
             "extra_days":         extra_days,
         })
@@ -730,7 +722,6 @@ def page_estimation():
         backlog=backlog,
         sprint_weeks=sprint_weeks,
         start_date=start_date,
-        rounding_decimal=rounding,
         std_dev_override=std_dev_override,
         extra_days=extra_days,
     )
