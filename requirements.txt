@@ -1,0 +1,7 @@
+streamlit
+supabase
+httpx
+scipy
+pandas
+plotly
+reportlab
