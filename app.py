@@ -1181,10 +1181,9 @@ def page_estimation():
     show_archived = st.session_state.get(f"show_archived_{team_id}", False)
     releases      = get_releases(team_id, include_archived=show_archived)
 
-    col_rel_hdr, col_archived, col_new = st.columns([4, 2, 1])
+    col_rel_hdr, col_archived, col_new = st.columns([4, 2, 1], vertical_alignment="center")
     col_rel_hdr.subheader("Releases")
     with col_archived:
-        st.markdown("&nbsp;", unsafe_allow_html=True)
         new_archived = st.toggle("Show Archived", value=show_archived, key=f"archived_toggle_{team_id}")
         if new_archived != show_archived:
             st.session_state[f"show_archived_{team_id}"] = new_archived
