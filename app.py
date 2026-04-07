@@ -303,6 +303,23 @@ def delete_team(team_id: str):
     db().table("teams").delete().eq("id", team_id).execute()
 
 
+def get_team_config(team_id: str) -> dict:
+    try:
+        r = db().table("teams").select(
+            "unit_label, default_confidence_label, default_sprint_weeks, default_desired_confidence"
+        ).eq("id", team_id).execute()
+        return r.data[0] if r.data else {}
+    except Exception:
+        return {}
+
+
+def save_team_config(team_id: str, data: dict):
+    try:
+        db().table("teams").update(data).eq("id", team_id).execute()
+    except Exception:
+        pass
+
+
 # ── Release helpers ────────────────────────────────────────────────────────────
 def get_releases(team_id: str) -> list:
     try:
@@ -312,11 +329,16 @@ def get_releases(team_id: str) -> list:
         return []
 
 
-def create_release(team_id: str, name: str) -> str:
+def create_release(team_id: str, name: str, defaults: dict = None) -> str:
     """Create a release and its default base scenario. Returns the release id."""
     r   = db().table("releases").insert({"team_id": team_id, "name": name}).execute()
     rid = r.data[0]["id"]
-    db().table("scenarios").insert({"release_id": rid, "name": "Base", "sort_order": 0}).execute()
+    scenario_data = {"release_id": rid, "name": "Base", "sort_order": 0}
+    if defaults:
+        for k in ("sprint_weeks", "confidence_label", "desired_confidence"):
+            if defaults.get(k) is not None:
+                scenario_data[k] = defaults[k]
+    db().table("scenarios").insert(scenario_data).execute()
     return rid
 
 
@@ -336,10 +358,13 @@ def get_scenarios(release_id: str) -> list:
         return []
 
 
-def create_scenario(release_id: str, name: str, sort_order: int) -> str:
-    r = db().table("scenarios").insert({
-        "release_id": release_id, "name": name, "sort_order": sort_order,
-    }).execute()
+def create_scenario(release_id: str, name: str, sort_order: int, defaults: dict = None) -> str:
+    data = {"release_id": release_id, "name": name, "sort_order": sort_order}
+    if defaults:
+        for k in ("sprint_weeks", "confidence_label", "desired_confidence"):
+            if defaults.get(k) is not None:
+                data[k] = defaults[k]
+    r = db().table("scenarios").insert(data).execute()
     return r.data[0]["id"]
 
 
@@ -464,7 +489,7 @@ def _chart_scenario_comparison(rows: list) -> go.Figure:
 
 
 # ── Scenario render helpers ───────────────────────────────────────────────────
-def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
+def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_label: str = "points"):
     """Render inputs and results for a single scenario tab."""
     scenario_id = scenario["id"]
     release_id  = release["id"]
@@ -525,7 +550,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
         )
     with col2:
         backlog = st.number_input(
-            "Total Backlog (points)", min_value=1.0,
+            f"Total Backlog ({unit_label})", min_value=1.0,
             value=float(scenario.get("backlog") or 1.0),
             step=1.0, key=f"bl_{scenario_id}",
         )
@@ -537,7 +562,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
             key=f"sd_{scenario_id}",
         )
 
-    st.markdown("**Velocity Estimate (points per sprint)**")
+    st.markdown(f"**Velocity Estimate ({unit_label} per sprint)**")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         most_likely = st.number_input(
@@ -653,15 +678,15 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
     st.markdown(
         f"At **{desired_confidence:.0%} confidence**, your team will complete "
         f"**{release['name']}** by **{result['projected_date'].strftime('%B %d, %Y')}**. "
-        f"This assumes completing at least **{result['guaranteed_min']:.1f} points per sprint** "
+        f"This assumes completing at least **{result['guaranteed_min']:.1f} {unit_label} per sprint** "
         f"finishing in **Sprint {result['sprints_rounded']}** ({result['business_weeks']} business weeks)."
     )
 
     with st.expander("Calculation Details"):
         col1, col2 = st.columns(2)
-        col1.write(f"PERT weighted mean velocity: {result['pert_mean']:.1f} pts/sprint")
+        col1.write(f"PERT weighted mean velocity: {result['pert_mean']:.1f} {unit_label}/sprint")
         col1.write(f"Statistical std deviation: {result['std_dev']:.2f}")
-        col1.write(f"Guaranteed minimum velocity: {result['guaranteed_min']:.2f} pts/sprint")
+        col1.write(f"Guaranteed minimum velocity: {result['guaranteed_min']:.2f} {unit_label}/sprint")
         col2.write(f"Raw sprints needed: {result['sprints_raw']:.2f}")
         col2.write(f"Sprint completed in: Sprint {result['sprints_rounded']}")
         col2.write(f"Total calendar days: {result['total_days']}")
@@ -891,8 +916,10 @@ def page_teams():
 
 
 def page_estimation():
-    team_id   = st.session_state["current_team_id"]
-    team_name = st.session_state.get("current_team_name", "Team")
+    team_id    = st.session_state["current_team_id"]
+    team_name  = st.session_state.get("current_team_name", "Team")
+    team_cfg   = get_team_config(team_id)
+    unit_label = team_cfg.get("unit_label") or "points"
     st.title(f"Estimation — {team_name}")
 
     # Confirmation messages
@@ -954,7 +981,11 @@ def page_estimation():
             cancelled = c2.form_submit_button("Cancel")
         if submitted:
             if rname.strip():
-                rid = create_release(team_id, rname.strip())
+                rid = create_release(team_id, rname.strip(), defaults={
+                    "sprint_weeks":        team_cfg.get("default_sprint_weeks"),
+                    "confidence_label":    team_cfg.get("default_confidence_label"),
+                    "desired_confidence":  team_cfg.get("default_desired_confidence"),
+                })
                 st.session_state[f"current_release_{team_id}"] = rid
                 st.session_state.pop(f"creating_release_{team_id}", None)
                 st.session_state["release_created"]      = True
@@ -1014,7 +1045,11 @@ def page_estimation():
         if st.button("+ New Scenario", use_container_width=True):
             next_order = max((s["sort_order"] for s in scenarios), default=-1) + 1
             new_name   = f"Scenario {next_order + 1}"
-            create_scenario(release_id, new_name, next_order)
+            create_scenario(release_id, new_name, next_order, defaults={
+                "sprint_weeks":       team_cfg.get("default_sprint_weeks"),
+                "confidence_label":   team_cfg.get("default_confidence_label"),
+                "desired_confidence": team_cfg.get("default_desired_confidence"),
+            })
             st.session_state["scenario_created"]      = True
             st.session_state["scenario_created_name"] = f"'{new_name}' created."
             st.rerun()
@@ -1026,7 +1061,7 @@ def page_estimation():
     tabs = st.tabs([s["name"] for s in scenarios])
     for tab, scenario in zip(tabs, scenarios):
         with tab:
-            _render_scenario(scenario, release, len(scenarios))
+            _render_scenario(scenario, release, len(scenarios), unit_label)
 
     # ── Comparison table ──────────────────────────────────────────────────────
     if len(scenarios) > 1:
@@ -1036,9 +1071,77 @@ def page_estimation():
 
 
 def page_configuration():
+    team_id   = st.session_state["current_team_id"]
     team_name = st.session_state.get("current_team_name", "Team")
     st.title(f"Configuration — {team_name}")
-    st.info("Configuration coming in a future build layer.")
+
+    if st.session_state.pop("config_saved", False):
+        st.success("Configuration saved.")
+
+    cfg = get_team_config(team_id)
+
+    with st.expander("How to use this page"):
+        st.markdown("""
+- These settings apply to this team and pre-fill new scenarios with your preferred defaults.
+- Changing these settings does not affect scenarios that have already been created.
+- Use **Reset to Defaults** to restore all settings to their original values.
+        """)
+
+    st.subheader("Unit of Work")
+    unit_options = ["points", "issues"]
+    unit_idx     = unit_options.index(cfg.get("unit_label") or "points")
+    unit_label   = st.selectbox(
+        "What unit does your team measure velocity in?",
+        unit_options, index=unit_idx, key="cfg_unit",
+    )
+
+    st.subheader("New Scenario Defaults")
+    st.caption("These values pre-fill whenever a new scenario is created for this team.")
+
+    col1, col2 = st.columns(2)
+    with col1:
+        sw_options = list(range(1, 9))
+        sw_val     = int(cfg.get("default_sprint_weeks") or 2)
+        sprint_weeks = st.selectbox(
+            "Default Sprint Length (weeks)",
+            sw_options, index=sw_options.index(sw_val), key="cfg_sw",
+        )
+    with col2:
+        dc_val = int(float(cfg.get("default_desired_confidence") or 0.80) * 100)
+        desired_pct = st.slider(
+            "Default Desired Confidence",
+            min_value=1, max_value=99, value=dc_val, format="%d%%", key="cfg_dc",
+        )
+
+    cl_val = cfg.get("default_confidence_label") or "Medium confidence"
+    cl_idx = CONFIDENCE_LABELS.index(cl_val) if cl_val in CONFIDENCE_LABELS else 4
+    confidence_label = st.selectbox(
+        "Default Confidence in Most Likely Estimate",
+        CONFIDENCE_LABELS, index=cl_idx, key="cfg_cl",
+    )
+
+    st.divider()
+    col_save, col_reset = st.columns(2)
+    with col_save:
+        if st.button("Save Configuration", use_container_width=True):
+            save_team_config(team_id, {
+                "unit_label":                 unit_label,
+                "default_sprint_weeks":       sprint_weeks,
+                "default_desired_confidence": desired_pct / 100,
+                "default_confidence_label":   confidence_label,
+            })
+            st.session_state["config_saved"] = True
+            st.rerun()
+    with col_reset:
+        if st.button("Reset to Defaults", use_container_width=True):
+            save_team_config(team_id, {
+                "unit_label":                 "points",
+                "default_sprint_weeks":       2,
+                "default_desired_confidence": 0.80,
+                "default_confidence_label":   "Medium confidence",
+            })
+            st.session_state["config_saved"] = True
+            st.rerun()
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
