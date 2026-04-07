@@ -389,10 +389,14 @@ def _chart_bell_curve(result: dict, desired_confidence: float) -> go.Figure:
         fill="toself", fillcolor="rgba(231,76,60,0.25)",
         line=dict(color="rgba(0,0,0,0)"), showlegend=False,
     ))
-    fig.add_vline(x=gmin, line_dash="dash", line_color="#e74c3c",
-                  annotation_text=f"Min: {gmin:.1f}", annotation_position="top right")
-    fig.add_vline(x=mean, line_dash="dot", line_color="#2980b9",
-                  annotation_text=f"Mean: {mean:.1f}", annotation_position="top left")
+    fig.add_vline(x=gmin, line_dash="dash", line_color="#e74c3c")
+    fig.add_vline(x=mean, line_dash="dot",  line_color="#2980b9")
+    fig.add_annotation(x=gmin, y=1.08, yref="paper", xref="x",
+                       text=f"Min: {gmin:.1f}", showarrow=False,
+                       font=dict(color="#e74c3c", size=12), xanchor="left")
+    fig.add_annotation(x=mean, y=1.08, yref="paper", xref="x",
+                       text=f"Mean: {mean:.1f}", showarrow=False,
+                       font=dict(color="#2980b9", size=12), xanchor="right")
     fig.update_layout(
         title=f"Velocity Distribution — {desired_confidence:.0%} confidence threshold",
         xaxis_title="Points per Sprint", yaxis_title="Probability",
@@ -448,11 +452,13 @@ def _chart_scenario_comparison(rows: list) -> go.Figure:
         text=[f"{w} wks  ({d})" for w, d in zip(weeks, dates)],
         textposition="outside",
     ))
+    max_weeks = max(weeks) if weeks else 1
     fig.update_layout(
         title="Business Weeks to Completion by Scenario",
         xaxis_title="Business Weeks", yaxis_title="",
+        xaxis_range=[0, max_weeks * 1.5],
         height=max(200, 60 * len(rows) + 80),
-        margin=dict(l=10, r=120, t=50, b=40),
+        margin=dict(l=10, r=20, t=50, b=40),
     )
     return fig
 
