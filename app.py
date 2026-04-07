@@ -1587,9 +1587,10 @@ def show_sidebar():
             st.session_state["page"] = "teams"
             st.rerun()
 
-        # Team selector dropdown
+        # Team selector dropdown — hidden on Teams page (redundant with main content)
         teams = get_teams()
-        if teams:
+        on_teams_page = st.session_state.get("page", "teams") == "teams"
+        if teams and not on_teams_page:
             team_names = [t["name"] for t in teams]
             current_id = st.session_state.get("current_team_id")
             current_idx = next((i for i, t in enumerate(teams) if t["id"] == current_id), 0)
