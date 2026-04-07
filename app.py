@@ -3,6 +3,7 @@ from datetime import date as date_type, datetime
 import streamlit as st
 import httpx
 from supabase import create_client, Client
+import pandas as pd
 from calculations import compute_estimate, CONFIDENCE_LABELS
 
 st.set_page_config(
@@ -324,23 +325,294 @@ def delete_release(release_id: str):
     db().table("releases").delete().eq("id", release_id).execute()
 
 
-def get_scenario(release_id: str) -> dict:
-    """Get the base scenario for a release."""
+def get_scenarios(release_id: str) -> list:
     try:
-        r = db().table("scenarios").select("*").eq("release_id", release_id).order("sort_order").limit(1).execute()
-        return r.data[0] if r.data else {}
+        r = db().table("scenarios").select("*").eq("release_id", release_id).order("sort_order").execute()
+        return r.data or []
     except Exception:
-        return {}
+        return []
 
 
-def save_scenario(release_id: str, data: dict):
-    """Update the base scenario for a release."""
+def create_scenario(release_id: str, name: str, sort_order: int) -> str:
+    r = db().table("scenarios").insert({
+        "release_id": release_id, "name": name, "sort_order": sort_order,
+    }).execute()
+    return r.data[0]["id"]
+
+
+def duplicate_scenario(scenario: dict, new_name: str, sort_order: int) -> str:
+    fields = ["release_id", "most_likely", "worst_case", "best_case",
+              "confidence_label", "desired_confidence", "backlog",
+              "sprint_weeks", "start_date", "std_dev_override", "extra_days"]
+    data = {k: scenario.get(k) for k in fields}
+    data["name"]       = new_name
+    data["sort_order"] = sort_order
+    r = db().table("scenarios").insert(data).execute()
+    return r.data[0]["id"]
+
+
+def update_scenario_name(scenario_id: str, name: str):
+    db().table("scenarios").update({"name": name}).eq("id", scenario_id).execute()
+
+
+def delete_scenario(scenario_id: str):
+    db().table("scenarios").delete().eq("id", scenario_id).execute()
+
+
+def save_scenario_by_id(scenario_id: str, data: dict):
     try:
-        r = db().table("scenarios").select("id").eq("release_id", release_id).order("sort_order").limit(1).execute()
-        if r.data:
-            db().table("scenarios").update(data).eq("id", r.data[0]["id"]).execute()
+        db().table("scenarios").update(data).eq("id", scenario_id).execute()
     except Exception:
         pass
+
+
+# ── Scenario render helpers ───────────────────────────────────────────────────
+def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
+    """Render inputs and results for a single scenario tab."""
+    scenario_id = scenario["id"]
+    release_id  = release["id"]
+
+    # Manage scenario
+    with st.expander("Rename, Duplicate, or Delete this Scenario"):
+        col_a, col_b, col_c = st.columns(3)
+        with col_a:
+            new_sname = st.text_input("New Name", value=scenario["name"], key=f"sname_{scenario_id}")
+            if st.button("Rename", key=f"do_srename_{scenario_id}"):
+                if new_sname.strip():
+                    update_scenario_name(scenario_id, new_sname.strip())
+                    st.session_state["scenario_renamed"]      = True
+                    st.session_state["scenario_renamed_name"] = f"Renamed to '{new_sname.strip()}'."
+                    st.rerun()
+                else:
+                    st.warning("Name cannot be empty.")
+        with col_b:
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            if st.button("Duplicate", key=f"dup_s_{scenario_id}"):
+                all_s      = get_scenarios(release_id)
+                next_order = max((s["sort_order"] for s in all_s), default=0) + 1
+                new_name   = f"{scenario['name']} (copy)"
+                duplicate_scenario(scenario, new_name, next_order)
+                st.session_state["scenario_duplicated"]      = True
+                st.session_state["scenario_duplicated_name"] = f"Duplicated as '{new_name}'."
+                st.rerun()
+        with col_c:
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            if total_scenarios > 1:
+                if st.button("Delete", key=f"del_s_{scenario_id}"):
+                    st.session_state[f"confirm_del_s_{scenario_id}"] = True
+                    st.rerun()
+            else:
+                st.caption("Cannot delete the only scenario.")
+
+        if st.session_state.get(f"confirm_del_s_{scenario_id}"):
+            st.warning(f"Delete **{scenario['name']}**? This cannot be undone.")
+            ca, cb = st.columns(2)
+            if ca.button("Yes, delete", key=f"yes_del_s_{scenario_id}"):
+                delete_scenario(scenario_id)
+                st.session_state.pop(f"confirm_del_s_{scenario_id}", None)
+                st.session_state["scenario_deleted"]      = True
+                st.session_state["scenario_deleted_name"] = f"Scenario '{scenario['name']}' deleted."
+                st.rerun()
+            if cb.button("Cancel", key=f"no_del_s_{scenario_id}"):
+                st.session_state.pop(f"confirm_del_s_{scenario_id}", None)
+                st.rerun()
+
+    # Inputs
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        sprint_weeks = st.number_input(
+            "Sprint Length (weeks)", min_value=1, max_value=8,
+            value=int(scenario.get("sprint_weeks") or 2),
+            step=1, key=f"sw_{scenario_id}",
+        )
+    with col2:
+        backlog = st.number_input(
+            "Total Backlog (points)", min_value=1.0,
+            value=float(scenario.get("backlog") or 1.0),
+            step=1.0, key=f"bl_{scenario_id}",
+        )
+    with col3:
+        raw_date   = scenario.get("start_date")
+        start_date = st.date_input(
+            "Release Start Date",
+            value=datetime.strptime(raw_date, "%Y-%m-%d").date() if isinstance(raw_date, str) else date_type.today(),
+            key=f"sd_{scenario_id}",
+        )
+
+    st.markdown("**Velocity Estimate (points per sprint)**")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        most_likely = st.number_input(
+            "Most Likely", min_value=0.1,
+            value=float(scenario.get("most_likely") or 18.0),
+            step=0.5, key=f"ml_{scenario_id}",
+        )
+    with col2:
+        worst_case = st.number_input(
+            "Worst Case", min_value=0.1,
+            value=float(scenario.get("worst_case") or 10.0),
+            step=0.5, key=f"wc_{scenario_id}",
+        )
+    with col3:
+        best_case = st.number_input(
+            "Best Case", min_value=0.1,
+            value=float(scenario.get("best_case") or 28.0),
+            step=0.5, key=f"bc_{scenario_id}",
+        )
+    with col4:
+        conf_idx = CONFIDENCE_LABELS.index(scenario.get("confidence_label") or "Medium confidence")
+        confidence_label = st.selectbox(
+            "Confidence in Most Likely",
+            CONFIDENCE_LABELS,
+            index=conf_idx,
+            key=f"cl_{scenario_id}",
+        )
+
+    desired_pct = st.slider(
+        "Desired Confidence",
+        min_value=1, max_value=99,
+        value=int(float(scenario.get("desired_confidence") or 0.80) * 100),
+        format="%d%%",
+        key=f"dc_{scenario_id}",
+    )
+    desired_confidence = desired_pct / 100
+
+    with st.expander("Advanced Options"):
+        sdo_val = st.number_input(
+            "Standard Deviation Override (leave at 0 to use the calculated value)",
+            min_value=0.0,
+            value=float(scenario.get("std_dev_override") or 0.0),
+            step=0.1, format="%.1f",
+            key=f"sdo_{scenario_id}",
+        )
+        std_dev_override = sdo_val if sdo_val > 0 else None
+        extra_days = st.number_input(
+            "Extra Calendar Days (e.g. holidays, planned team events)",
+            min_value=0,
+            value=int(scenario.get("extra_days") or 0),
+            step=1, key=f"ed_{scenario_id}",
+        )
+
+    if st.button("Save Changes", key=f"save_{scenario_id}"):
+        save_scenario_by_id(scenario_id, {
+            "sprint_weeks":       sprint_weeks,
+            "backlog":            backlog,
+            "start_date":         str(start_date),
+            "most_likely":        most_likely,
+            "worst_case":         worst_case,
+            "best_case":          best_case,
+            "confidence_label":   confidence_label,
+            "desired_confidence": desired_confidence,
+            "std_dev_override":   std_dev_override,
+            "extra_days":         extra_days,
+        })
+        st.session_state["scenario_saved"] = True
+        st.rerun()
+
+    # Validation
+    st.divider()
+    if worst_case >= most_likely:
+        st.warning("Worst case must be less than most likely.")
+        return
+    if best_case <= most_likely:
+        st.warning("Best case must be greater than most likely.")
+        return
+
+    # Results
+    result = compute_estimate(
+        most_likely=most_likely,
+        worst_case=worst_case,
+        best_case=best_case,
+        confidence_label=confidence_label,
+        desired_confidence=desired_confidence,
+        backlog=backlog,
+        sprint_weeks=sprint_weeks,
+        start_date=start_date,
+        std_dev_override=std_dev_override,
+        extra_days=extra_days,
+    )
+
+    if not result["bell_ok"]:
+        st.warning(
+            "Your velocity estimates are highly asymmetric — the gap between your most likely "
+            "value and worst/best case is uneven. Consider rebalancing for more reliable results."
+        )
+    if desired_confidence < 0.50:
+        st.warning(
+            f"You have selected {desired_confidence:.0%} confidence. At levels below 50%, "
+            "unknown factors in software delivery frequently cause estimates to run over."
+        )
+
+    st.subheader("Results")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Projected Date",      result["projected_date"].strftime("%b %d, %Y"))
+    c2.metric("Confidence",          f"{desired_confidence:.0%}")
+    c3.metric("Sprint Completed In", f"Sprint {result['sprints_rounded']}")
+    c4.metric("Business Weeks",      result["business_weeks"])
+
+    st.markdown(
+        f"At **{desired_confidence:.0%} confidence**, your team will complete "
+        f"**{release['name']}** by **{result['projected_date'].strftime('%B %d, %Y')}**. "
+        f"This assumes completing at least **{result['guaranteed_min']:.1f} points per sprint** "
+        f"finishing in **Sprint {result['sprints_rounded']}** ({result['business_weeks']} business weeks)."
+    )
+
+    with st.expander("Calculation Details"):
+        col1, col2 = st.columns(2)
+        col1.write(f"PERT weighted mean velocity: {result['pert_mean']:.1f} pts/sprint")
+        col1.write(f"Statistical std deviation: {result['std_dev']:.2f}")
+        col1.write(f"Guaranteed minimum velocity: {result['guaranteed_min']:.2f} pts/sprint")
+        col2.write(f"Raw sprints needed: {result['sprints_raw']:.2f}")
+        col2.write(f"Sprint completed in: Sprint {result['sprints_rounded']}")
+        col2.write(f"Total calendar days: {result['total_days']}")
+
+
+def _render_comparison(scenarios: list):
+    """Render side-by-side results table for all valid scenarios using live widget values."""
+    rows = []
+    for s in scenarios:
+        sid = s["id"]
+        try:
+            ml  = st.session_state.get(f"ml_{sid}", float(s.get("most_likely") or 0))
+            wc  = st.session_state.get(f"wc_{sid}", float(s.get("worst_case")  or 0))
+            bc  = st.session_state.get(f"bc_{sid}", float(s.get("best_case")   or 0))
+            if not ml or wc >= ml or bc <= ml:
+                continue
+            cl     = st.session_state.get(f"cl_{sid}", s.get("confidence_label") or "Medium confidence")
+            dc_pct = st.session_state.get(f"dc_{sid}", int(float(s.get("desired_confidence") or 0.80) * 100))
+            dc     = dc_pct / 100
+            bl     = st.session_state.get(f"bl_{sid}", float(s.get("backlog") or 1))
+            sw     = st.session_state.get(f"sw_{sid}", int(s.get("sprint_weeks") or 2))
+            sd_val = st.session_state.get(f"sd_{sid}")
+            if sd_val is None:
+                raw = s.get("start_date")
+                sd_val = datetime.strptime(raw, "%Y-%m-%d").date() if isinstance(raw, str) else date_type.today()
+            sdo_raw = st.session_state.get(f"sdo_{sid}", float(s.get("std_dev_override") or 0))
+            sdo     = sdo_raw if sdo_raw > 0 else None
+            ed      = st.session_state.get(f"ed_{sid}", int(s.get("extra_days") or 0))
+
+            result = compute_estimate(
+                most_likely=ml, worst_case=wc, best_case=bc,
+                confidence_label=cl, desired_confidence=dc,
+                backlog=bl, sprint_weeks=sw, start_date=sd_val,
+                std_dev_override=sdo, extra_days=ed,
+            )
+            rows.append({
+                "Scenario":            s["name"],
+                "Projected Date":      result["projected_date"].strftime("%b %d, %Y"),
+                "Confidence":          f"{dc:.0%}",
+                "Sprint Completed In": f"Sprint {result['sprints_rounded']}",
+                "Business Weeks":      result["business_weeks"],
+            })
+        except Exception:
+            continue
+
+    if not rows:
+        st.info("No valid scenarios to compare yet. Complete the inputs in at least two scenarios.")
+        return
+
+    df = pd.DataFrame(rows).set_index("Scenario")
+    st.dataframe(df, use_container_width=True)
 
 
 # ── Pages ──────────────────────────────────────────────────────────────────────
@@ -503,22 +775,29 @@ def page_estimation():
     st.title(f"Estimation — {team_name}")
 
     # Confirmation messages
-    if st.session_state.pop("release_saved", False):
-        st.success("Changes saved.")
-    if st.session_state.pop("release_created", False):
-        st.success(st.session_state.pop("release_created_name", "Release created."))
-    if st.session_state.pop("release_deleted", False):
-        st.success(st.session_state.pop("release_deleted_name", "Release deleted."))
-    if st.session_state.pop("release_renamed", False):
-        st.success(st.session_state.pop("release_renamed_name", "Release renamed."))
+    for key, default in [
+        ("release_saved",       "Changes saved."),
+        ("release_created",     None),
+        ("release_deleted",     None),
+        ("release_renamed",     None),
+        ("scenario_saved",      "Scenario saved."),
+        ("scenario_created",    None),
+        ("scenario_deleted",    None),
+        ("scenario_renamed",    None),
+        ("scenario_duplicated", None),
+    ]:
+        if st.session_state.pop(key, False):
+            msg_key = f"{key}_name"
+            st.success(st.session_state.pop(msg_key, default or "Done."))
 
     with st.expander("How to use this page"):
         st.markdown("""
 - Create a release for each upcoming delivery you want to estimate.
-- Enter your team's velocity estimates (worst case, most likely, best case) and total backlog size.
-- The projected date updates in real time as you adjust inputs — no need to click Calculate.
-- Use **Desired Confidence** to see how the date changes at different confidence levels.
-- Click **Save Changes** to store your inputs.
+- Add multiple scenarios to compare different assumptions (e.g. Optimistic, Conservative).
+- Enter velocity estimates and backlog size — results update in real time.
+- Use **Desired Confidence** to see how the projected date shifts at different confidence levels.
+- The **Comparison Table** at the bottom shows all scenarios side by side.
+- Click **Save Changes** within a scenario to store its inputs.
         """)
 
     # ── Release selector ──────────────────────────────────────────────────────
@@ -547,7 +826,6 @@ def page_estimation():
         else:
             st.info("No releases yet. Click **+ New Release** to get started.")
 
-    # Create release form
     if st.session_state.get(f"creating_release_{team_id}"):
         with st.form(f"new_release_{team_id}"):
             rname = st.text_input("Release Name", placeholder="e.g. v1.0, Q3 Release")
@@ -573,7 +851,6 @@ def page_estimation():
 
     release    = selected_release
     release_id = release["id"]
-    scenario   = get_scenario(release_id)
 
     # Rename / delete release
     with st.expander("Rename or Delete this Release"):
@@ -608,158 +885,34 @@ def page_estimation():
 
     st.divider()
 
-    # ── Inputs ────────────────────────────────────────────────────────────────
-    st.subheader("Estimation Inputs")
+    # ── Scenarios ─────────────────────────────────────────────────────────────
+    scenarios = get_scenarios(release_id)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        sprint_weeks = st.number_input(
-            "Sprint Length (weeks)", min_value=1, max_value=8,
-            value=int(scenario.get("sprint_weeks") or 2),
-            step=1, key=f"sw_{release_id}",
-        )
-    with col2:
-        backlog = st.number_input(
-            "Total Backlog (points)", min_value=1.0,
-            value=float(scenario.get("backlog") or 1.0),
-            step=1.0, key=f"bl_{release_id}",
-        )
-    with col3:
-        raw_date   = scenario.get("start_date")
-        start_date = st.date_input(
-            "Release Start Date",
-            value=datetime.strptime(raw_date, "%Y-%m-%d").date() if isinstance(raw_date, str) else date_type.today(),
-            key=f"sd_{release_id}",
-        )
+    col_sc, col_sc_new = st.columns([5, 1])
+    col_sc.subheader("Scenarios")
+    with col_sc_new:
+        if st.button("+ New Scenario", use_container_width=True):
+            next_order = max((s["sort_order"] for s in scenarios), default=-1) + 1
+            new_name   = f"Scenario {next_order + 1}"
+            create_scenario(release_id, new_name, next_order)
+            st.session_state["scenario_created"]      = True
+            st.session_state["scenario_created_name"] = f"'{new_name}' created."
+            st.rerun()
 
-    st.markdown("**Velocity Estimate (points per sprint)**")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        most_likely = st.number_input(
-            "Most Likely", min_value=0.1,
-            value=float(scenario.get("most_likely") or 18.0),
-            step=0.5, key=f"ml_{release_id}",
-        )
-    with col2:
-        worst_case = st.number_input(
-            "Worst Case", min_value=0.1,
-            value=float(scenario.get("worst_case") or 10.0),
-            step=0.5, key=f"wc_{release_id}",
-        )
-    with col3:
-        best_case = st.number_input(
-            "Best Case", min_value=0.1,
-            value=float(scenario.get("best_case") or 28.0),
-            step=0.5, key=f"bc_{release_id}",
-        )
-    with col4:
-        conf_idx = CONFIDENCE_LABELS.index(scenario.get("confidence_label") or "Medium confidence")
-        confidence_label = st.selectbox(
-            "Confidence in Most Likely",
-            CONFIDENCE_LABELS,
-            index=conf_idx,
-            key=f"cl_{release_id}",
-        )
-
-    desired_pct = st.slider(
-        "Desired Confidence",
-        min_value=1, max_value=99,
-        value=int(float(scenario.get("desired_confidence") or 0.80) * 100),
-        format="%d%%",
-        key=f"dc_{release_id}",
-    )
-    desired_confidence = desired_pct / 100
-
-    with st.expander("Advanced Options"):
-        sdo_val = st.number_input(
-            "Standard Deviation Override (leave at 0 to use the calculated value)",
-            min_value=0.0,
-            value=float(scenario.get("std_dev_override") or 0.0),
-            step=0.1, format="%.1f",
-            key=f"sdo_{release_id}",
-        )
-        std_dev_override = sdo_val if sdo_val > 0 else None
-        extra_days = st.number_input(
-            "Extra Calendar Days (e.g. holidays, planned team events)",
-            min_value=0,
-            value=int(scenario.get("extra_days") or 0),
-            step=1, key=f"ed_{release_id}",
-        )
-
-    if st.button("Save Changes", key=f"save_{release_id}"):
-        save_scenario(release_id, {
-            "sprint_weeks":       sprint_weeks,
-            "backlog":            backlog,
-            "start_date":         str(start_date),
-            "most_likely":        most_likely,
-            "worst_case":         worst_case,
-            "best_case":          best_case,
-            "confidence_label":   confidence_label,
-            "desired_confidence": desired_confidence,
-            "std_dev_override":   std_dev_override,
-            "extra_days":         extra_days,
-        })
-        st.session_state["release_saved"] = True
-        st.rerun()
-
-    # ── Validation ────────────────────────────────────────────────────────────
-    st.divider()
-
-    if worst_case >= most_likely:
-        st.warning("Worst case must be less than most likely.")
-        return
-    if best_case <= most_likely:
-        st.warning("Best case must be greater than most likely.")
+    if not scenarios:
+        st.info("No scenarios yet.")
         return
 
-    # ── Results ───────────────────────────────────────────────────────────────
-    result = compute_estimate(
-        most_likely=most_likely,
-        worst_case=worst_case,
-        best_case=best_case,
-        confidence_label=confidence_label,
-        desired_confidence=desired_confidence,
-        backlog=backlog,
-        sprint_weeks=sprint_weeks,
-        start_date=start_date,
-        std_dev_override=std_dev_override,
-        extra_days=extra_days,
-    )
+    tabs = st.tabs([s["name"] for s in scenarios])
+    for tab, scenario in zip(tabs, scenarios):
+        with tab:
+            _render_scenario(scenario, release, len(scenarios))
 
-    # Contextual warnings — only shown when triggered
-    if not result["bell_ok"]:
-        st.warning(
-            "Your velocity estimates are highly asymmetric — the gap between your most likely "
-            "value and worst/best case is uneven. Consider rebalancing for more reliable results."
-        )
-    if desired_confidence < 0.50:
-        st.warning(
-            f"You have selected {desired_confidence:.0%} confidence. At levels below 50%, "
-            "unknown factors in software delivery frequently cause estimates to run over."
-        )
-
-    st.subheader("Results")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Projected Date",  result["projected_date"].strftime("%b %d, %Y"))
-    c2.metric("Confidence",      f"{desired_confidence:.0%}")
-    c3.metric("Sprint Completed In", f"Sprint {result['sprints_rounded']}")
-    c4.metric("Business Weeks",  result["business_weeks"])
-
-    st.markdown(
-        f"At **{desired_confidence:.0%} confidence**, your team will complete "
-        f"**{release['name']}** by **{result['projected_date'].strftime('%B %d, %Y')}**. "
-        f"This assumes completing at least **{result['guaranteed_min']:.1f} points per sprint** "
-        f"finishing in **Sprint {result['sprints_rounded']}** ({result['business_weeks']} business weeks)."
-    )
-
-    with st.expander("Calculation Details"):
-        col1, col2 = st.columns(2)
-        col1.write(f"PERT weighted mean velocity: {result['pert_mean']:.1f} pts/sprint")
-        col1.write(f"Statistical std deviation: {result['std_dev']:.2f}")
-        col1.write(f"Guaranteed minimum velocity: {result['guaranteed_min']:.2f} pts/sprint")
-        col2.write(f"Raw sprints needed: {result['sprints_raw']:.2f}")
-        col2.write(f"Sprint completed in: Sprint {result['sprints_rounded']}")
-        col2.write(f"Total calendar days: {result['total_days']}")
+    # ── Comparison table ──────────────────────────────────────────────────────
+    if len(scenarios) > 1:
+        st.divider()
+        st.subheader("Comparison")
+        _render_comparison(scenarios)
 
 
 def page_configuration():
