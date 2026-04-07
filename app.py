@@ -698,16 +698,16 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
     st.markdown(f"**Velocity Estimate ({unit_label} per sprint)**")
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        most_likely = st.number_input(
-            "Most Likely", min_value=0.1,
-            value=float(scenario.get("most_likely") or 0.1),
-            step=0.5, key=f"ml_{scenario_id}",
-        )
-    with col2:
         worst_case = st.number_input(
             "Worst Case", min_value=0.1,
             value=float(scenario.get("worst_case") or 0.1),
             step=0.5, key=f"wc_{scenario_id}",
+        )
+    with col2:
+        most_likely = st.number_input(
+            "Most Likely", min_value=0.1,
+            value=float(scenario.get("most_likely") or 0.1),
+            step=0.5, key=f"ml_{scenario_id}",
         )
     with col3:
         best_case = st.number_input(
@@ -745,7 +745,14 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
     )
     desired_confidence = desired_pct / 100
 
-    with st.expander("Advanced Options"):
+    extra_days = st.number_input(
+        "Extra Non-Working Days (e.g. holidays, planned team events)",
+        min_value=0,
+        value=int(scenario.get("extra_days") or 0),
+        step=1, key=f"ed_{scenario_id}",
+    )
+
+    with st.expander("Expert Settings"):
         sdo_val = st.number_input(
             "Standard Deviation Override (leave at 0 to use the calculated value)",
             min_value=0.0,
@@ -754,12 +761,6 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
             key=f"sdo_{scenario_id}",
         )
         std_dev_override = sdo_val if sdo_val > 0 else None
-        extra_days = st.number_input(
-            "Extra Calendar Days (e.g. holidays, planned team events)",
-            min_value=0,
-            value=int(scenario.get("extra_days") or 0),
-            step=1, key=f"ed_{scenario_id}",
-        )
 
     if st.button("Save Changes", key=f"save_{scenario_id}"):
         save_scenario_by_id(scenario_id, {
@@ -1167,6 +1168,7 @@ def page_estimation():
 - Enter your velocity estimates (worst, most likely, best case) and backlog size. Results update as you type.
 - Use **Confidence in Projected Date** to control how certain you want to be that the team finishes by the projected date. Higher confidence produces a later, more conservative date.
 - Use **Confidence in Most Likely** to reflect how predictable your team's velocity is. Higher confidence means a tighter spread of outcomes.
+- Use **Extra Non-Working Days** to account for holidays or planned team events that fall within the release window.
 - The **Target Date Analysis** expander inside each scenario lets you enter a deadline and see what confidence level it corresponds to, and what minimum velocity is required to hit it.
 - The **Comparison Table** at the bottom shows all scenarios side by side.
 - Click **Save Changes** within a scenario to store its inputs.
@@ -1178,7 +1180,8 @@ def page_estimation():
     show_archived = st.session_state.get(f"show_archived_{team_id}", False)
     releases      = get_releases(team_id, include_archived=show_archived)
 
-    col_release, col_new = st.columns([5, 1])
+    col_rel_hdr, col_new = st.columns([5, 1])
+    col_rel_hdr.subheader("Releases")
     with col_new:
         if st.button("+ New Release", use_container_width=True):
             st.session_state[f"creating_release_{team_id}"] = True
