@@ -1602,7 +1602,13 @@ def show_sidebar():
             )
             selected_team = teams[selected_idx]
 
-            if current_id is not None and selected_team["id"] != current_id:
+            if current_id is None:
+                # First load after login — set team silently, stay on current page
+                st.session_state["current_team_id"]   = selected_team["id"]
+                st.session_state["current_team_name"] = selected_team["name"]
+                st.rerun()
+            elif selected_team["id"] != current_id:
+                # User switched teams — navigate to estimation
                 st.session_state["current_team_id"]   = selected_team["id"]
                 st.session_state["current_team_name"] = selected_team["name"]
                 st.session_state["page"]              = "estimation"
