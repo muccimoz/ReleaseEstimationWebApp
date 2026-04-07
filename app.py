@@ -324,12 +324,19 @@ def save_team_config(team_id: str, data: dict):
 
 
 # ── Release helpers ────────────────────────────────────────────────────────────
-def get_releases(team_id: str) -> list:
+def get_releases(team_id: str, include_archived: bool = False) -> list:
     try:
-        r = db().table("releases").select("id, name, share_token").eq("team_id", team_id).order("created_at").execute()
+        q = db().table("releases").select("id, name, share_token, status").eq("team_id", team_id)
+        if not include_archived:
+            q = q.eq("status", "active")
+        r = q.order("created_at").execute()
         return r.data or []
     except Exception:
         return []
+
+
+def set_release_status(release_id: str, status: str):
+    db().table("releases").update({"status": status}).eq("id", release_id).execute()
 
 
 def set_release_share_token(release_id: str, token: str | None):
@@ -715,6 +722,12 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
             CONFIDENCE_LABELS,
             index=conf_idx,
             key=f"cl_{scenario_id}",
+            help=(
+                "How certain are you that your Most Likely velocity will actually occur? "
+                "High confidence means your worst/best estimates are close to the most likely — "
+                "a tight, predictable range. Low confidence means wider uncertainty, "
+                "producing a broader spread of possible outcomes and a later projected date."
+            ),
         )
 
     desired_pct = st.slider(
@@ -1152,7 +1165,8 @@ def page_estimation():
         """)
 
     # ── Release selector ──────────────────────────────────────────────────────
-    releases = get_releases(team_id)
+    show_archived = st.session_state.get(f"show_archived_{team_id}", False)
+    releases      = get_releases(team_id, include_archived=show_archived)
 
     col_release, col_new = st.columns([5, 1])
     with col_new:
@@ -1161,9 +1175,12 @@ def page_estimation():
 
     with col_release:
         if releases:
-            release_names = [r["name"] for r in releases]
-            current_rid   = st.session_state.get(f"current_release_{team_id}")
-            current_idx   = next((i for i, r in enumerate(releases) if r["id"] == current_rid), 0)
+            release_names = [
+                f"{r['name']} (Archived)" if r.get("status") == "archived" else r["name"]
+                for r in releases
+            ]
+            current_rid  = st.session_state.get(f"current_release_{team_id}")
+            current_idx  = next((i for i, r in enumerate(releases) if r["id"] == current_rid), 0)
             sel_idx = st.selectbox(
                 "Release",
                 range(len(release_names)),
@@ -1175,7 +1192,30 @@ def page_estimation():
                 st.session_state[f"current_release_{team_id}"] = selected_release["id"]
                 st.rerun()
         else:
-            st.info("No releases yet. Click **+ New Release** to get started.")
+            if not show_archived:
+                st.markdown("### Welcome to Release Estimation")
+                st.markdown(
+                    "This tool helps your team answer: **when will we finish, and how confident are we?**\n\n"
+                    "It uses your team's velocity estimates and backlog size to project a completion date "
+                    "at a confidence level you choose — no historical sprint data required.\n\n"
+                    "**To get started:** click **+ New Release** above, name your release, "
+                    "then add scenarios with your velocity estimates and backlog size."
+                )
+            else:
+                st.info("No releases found.")
+
+    if st.toggle(
+        "Show Archived",
+        value=show_archived,
+        key=f"archived_toggle_{team_id}",
+    ):
+        if not show_archived:
+            st.session_state[f"show_archived_{team_id}"] = True
+            st.rerun()
+    else:
+        if show_archived:
+            st.session_state[f"show_archived_{team_id}"] = False
+            st.rerun()
 
     if st.session_state.get(f"creating_release_{team_id}"):
         with st.form(f"new_release_{team_id}"):
@@ -1207,9 +1247,10 @@ def page_estimation():
     release    = selected_release
     release_id = release["id"]
 
-    # Rename / delete release
-    with st.expander("Rename or Delete this Release"):
-        c1, c2 = st.columns(2)
+    # Rename / archive / delete release
+    is_archived = release.get("status") == "archived"
+    with st.expander("Rename, Archive, or Delete this Release"):
+        c1, c2, c3 = st.columns(3)
         with c1:
             new_rname = st.text_input("New Name", value=release["name"], key=f"rname_{release_id}")
             if st.button("Rename", key=f"do_rename_{release_id}"):
@@ -1221,7 +1262,22 @@ def page_estimation():
                 else:
                     st.warning("Name cannot be empty.")
         with c2:
-            st.markdown(" ")
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            if is_archived:
+                if st.button("Restore to Active", key=f"restore_r_{release_id}"):
+                    set_release_status(release_id, "active")
+                    st.session_state["release_renamed"]      = True
+                    st.session_state["release_renamed_name"] = f"'{release['name']}' restored to Active."
+                    st.rerun()
+            else:
+                if st.button("Archive", key=f"archive_r_{release_id}"):
+                    set_release_status(release_id, "archived")
+                    st.session_state.pop(f"current_release_{team_id}", None)
+                    st.session_state["release_renamed"]      = True
+                    st.session_state["release_renamed_name"] = f"'{release['name']}' archived."
+                    st.rerun()
+        with c3:
+            st.markdown("&nbsp;", unsafe_allow_html=True)
             if st.button("Delete this Release", key=f"del_r_{release_id}"):
                 st.session_state[f"confirm_del_r_{release_id}"] = True
                 st.rerun()
