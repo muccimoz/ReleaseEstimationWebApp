@@ -337,20 +337,18 @@ def set_release_share_token(release_id: str, token: str | None):
 
 
 def get_public_release_data(token: str) -> dict | None:
-    """Fetch release + team info using the share token. No auth required."""
+    """Fetch release data using the share token. No auth required."""
     try:
         r = get_supabase_public().table("releases").select(
-            "id, name, teams(name, unit_label)"
+            "id, name"
         ).eq("share_token", token).execute()
         if not r.data:
             return None
-        row        = r.data[0]
-        team_data  = row.get("teams") or {}
+        row = r.data[0]
         return {
             "release_id":   row["id"],
             "release_name": row["name"],
-            "team_name":    team_data.get("name", ""),
-            "unit_label":   team_data.get("unit_label") or "points",
+            "unit_label":   "points",
         }
     except Exception:
         return None
@@ -1334,7 +1332,7 @@ def page_shared_release(token: str):
         return
 
     st.title(f"{data['release_name']}")
-    st.caption(f"Team: {data['team_name']}  •  Read-only view")
+    st.caption("Read-only view")
     st.divider()
 
     unit_label = data["unit_label"]
