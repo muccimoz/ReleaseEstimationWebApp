@@ -1186,7 +1186,7 @@ def page_estimation():
         if st.button("+ New Release", use_container_width=True):
             st.session_state[f"creating_release_{team_id}"] = True
 
-    with col_release:
+    with col_rel_hdr:
         if releases:
             release_names = [
                 f"{r['name']} (Archived)" if r.get("status") == "archived" else r["name"]
