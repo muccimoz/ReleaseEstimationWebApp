@@ -1058,10 +1058,10 @@ def page_teams():
 
     with st.expander("How to use this page"):
         st.markdown("""
-- Each team has its own releases and estimation scenarios.
-- Click **Open** to view and manage a team's estimations.
-- Use **Add New Team** to create a team for each group you want to track separately.
-- Use **Rename** or **Delete** to manage existing teams.
+- Each team has its own releases, scenarios, and configuration settings.
+- Click **Open** to go to the Estimation page for that team.
+- Use **Add New Team** to create a separate team for each group you want to track independently.
+- Use **Rename** to update a team's name, or **Delete** to permanently remove it and all its data.
         """)
 
     with st.expander("Add New Team", expanded=(len(teams) == 0)):
@@ -1162,12 +1162,16 @@ def page_estimation():
 
     with st.expander("How to use this page"):
         st.markdown("""
-- Create a release for each upcoming delivery you want to estimate.
-- Add multiple scenarios to compare different assumptions (e.g. Optimistic, Conservative).
-- Enter velocity estimates and backlog size — results update in real time.
-- Use **Confidence in Projected Date** to see how the projected date shifts at different confidence levels.
+- Create a **release** for each upcoming delivery you want to estimate.
+- Add **scenarios** within a release to compare different assumptions — for example, Optimistic vs Conservative velocity.
+- Enter your velocity estimates (worst, most likely, best case) and backlog size. Results update as you type.
+- Use **Confidence in Projected Date** to control how certain you want to be that the team finishes by the projected date. Higher confidence produces a later, more conservative date.
+- Use **Confidence in Most Likely** to reflect how predictable your team's velocity is. Higher confidence means a tighter spread of outcomes.
+- The **Target Date Analysis** expander inside each scenario lets you enter a deadline and see what confidence level it corresponds to, and what minimum velocity is required to hit it.
 - The **Comparison Table** at the bottom shows all scenarios side by side.
 - Click **Save Changes** within a scenario to store its inputs.
+- Use **Share & Export** at the bottom of the page to generate a shareable link, download a CSV, or copy a plain-text summary.
+- **Archive** a release when it is complete to keep the list tidy. Archived releases can be restored at any time using the **Show Archived** toggle.
         """)
 
     # ── Release selector ──────────────────────────────────────────────────────
@@ -1434,6 +1438,8 @@ def page_configuration():
     with st.expander("How to use this page"):
         st.markdown("""
 - These settings apply to this team and pre-fill new scenarios with your preferred defaults.
+- **Unit of Work** sets whether your team measures velocity in points or issues — this label appears throughout the Estimation page.
+- **New Scenario Defaults** set the starting values for sprint length, confidence in projected date, and confidence in most likely whenever a new scenario is created.
 - Changing these settings does not affect scenarios that have already been created.
 - Use **Reset to Defaults** to restore all settings to their original values.
         """)
