@@ -731,11 +731,17 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
         )
 
     desired_pct = st.slider(
-        "Desired Confidence",
+        "Confidence in Projected Date",
         min_value=1, max_value=99,
         value=int(float(scenario.get("desired_confidence") or 0.80) * 100),
         format="%d%%",
         key=f"dc_{scenario_id}",
+        help=(
+            "The probability that your team will finish by the projected date. "
+            "At 80%, there is an 80% chance delivery occurs on or before that date — "
+            "and a 20% chance it runs over. Higher confidence produces a later date "
+            "because it requires a more conservative velocity guarantee."
+        ),
     )
     desired_confidence = desired_pct / 100
 
@@ -1159,7 +1165,7 @@ def page_estimation():
 - Create a release for each upcoming delivery you want to estimate.
 - Add multiple scenarios to compare different assumptions (e.g. Optimistic, Conservative).
 - Enter velocity estimates and backlog size — results update in real time.
-- Use **Desired Confidence** to see how the projected date shifts at different confidence levels.
+- Use **Confidence in Projected Date** to see how the projected date shifts at different confidence levels.
 - The **Comparison Table** at the bottom shows all scenarios side by side.
 - Click **Save Changes** within a scenario to store its inputs.
         """)
@@ -1456,7 +1462,7 @@ def page_configuration():
     with col2:
         dc_val = int(float(cfg.get("default_desired_confidence") or 0.80) * 100)
         desired_pct = st.slider(
-            "Default Desired Confidence",
+            "Default Confidence in Projected Date",
             min_value=1, max_value=99, value=dc_val, format="%d%%", key=f"cfg_dc_{v}",
         )
 
