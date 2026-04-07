@@ -1195,10 +1195,11 @@ def page_estimation():
             current_rid  = st.session_state.get(f"current_release_{team_id}")
             current_idx  = next((i for i, r in enumerate(releases) if r["id"] == current_rid), 0)
             sel_idx = st.selectbox(
-                "Release",
+                "Select Release",
                 range(len(release_names)),
                 format_func=lambda i: release_names[i],
                 index=current_idx,
+                label_visibility="collapsed",
             )
             selected_release = releases[sel_idx]
             if selected_release["id"] != current_rid:
