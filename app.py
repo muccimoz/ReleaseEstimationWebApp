@@ -1074,10 +1074,9 @@ def page_configuration():
     team_id   = st.session_state["current_team_id"]
     team_name = st.session_state.get("current_team_name", "Team")
 
-    # Clear widget cache before rendering if reset was requested
+    # Increment version on reset — forces all config widgets to re-initialize
     if st.session_state.pop("cfg_reset_pending", False):
-        for k in ["cfg_unit", "cfg_sw", "cfg_dc", "cfg_cl"]:
-            st.session_state.pop(k, None)
+        st.session_state["cfg_v"] = st.session_state.get("cfg_v", 0) + 1
 
     st.title(f"Configuration — {team_name}")
 
@@ -1093,12 +1092,14 @@ def page_configuration():
 - Use **Reset to Defaults** to restore all settings to their original values.
         """)
 
+    v = st.session_state.get("cfg_v", 0)
+
     st.subheader("Unit of Work")
     unit_options = ["points", "issues"]
     unit_idx     = unit_options.index(cfg.get("unit_label") or "points")
     unit_label   = st.selectbox(
         "What unit does your team measure velocity in?",
-        unit_options, index=unit_idx, key="cfg_unit",
+        unit_options, index=unit_idx, key=f"cfg_unit_{v}",
     )
 
     st.subheader("New Scenario Defaults")
@@ -1110,20 +1111,20 @@ def page_configuration():
         sw_val     = int(cfg.get("default_sprint_weeks") or 2)
         sprint_weeks = st.selectbox(
             "Default Sprint Length (weeks)",
-            sw_options, index=sw_options.index(sw_val), key="cfg_sw",
+            sw_options, index=sw_options.index(sw_val), key=f"cfg_sw_{v}",
         )
     with col2:
         dc_val = int(float(cfg.get("default_desired_confidence") or 0.80) * 100)
         desired_pct = st.slider(
             "Default Desired Confidence",
-            min_value=1, max_value=99, value=dc_val, format="%d%%", key="cfg_dc",
+            min_value=1, max_value=99, value=dc_val, format="%d%%", key=f"cfg_dc_{v}",
         )
 
     cl_val = cfg.get("default_confidence_label") or "Medium confidence"
     cl_idx = CONFIDENCE_LABELS.index(cl_val) if cl_val in CONFIDENCE_LABELS else 4
     confidence_label = st.selectbox(
         "Default Confidence in Most Likely Estimate",
-        CONFIDENCE_LABELS, index=cl_idx, key="cfg_cl",
+        CONFIDENCE_LABELS, index=cl_idx, key=f"cfg_cl_{v}",
     )
 
     st.divider()
