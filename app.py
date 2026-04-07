@@ -1181,7 +1181,8 @@ def page_estimation():
     show_archived = st.session_state.get(f"show_archived_{team_id}", False)
     releases      = get_releases(team_id, include_archived=show_archived)
 
-    col_rel_hdr, col_archived, col_new = st.columns([4, 2, 1], vertical_alignment="center")
+    # Header row: Releases label | Show Archived toggle | + New Release button
+    col_rel_hdr, col_archived, col_new = st.columns([4, 2, 1], vertical_alignment="bottom")
     col_rel_hdr.subheader("Releases")
     with col_archived:
         new_archived = st.toggle("Show Archived", value=show_archived, key=f"archived_toggle_{team_id}")
@@ -1192,37 +1193,37 @@ def page_estimation():
         if st.button("+ New Release", use_container_width=True):
             st.session_state[f"creating_release_{team_id}"] = True
 
-    with col_rel_hdr:
-        if releases:
-            release_names = [
-                f"{r['name']} (Archived)" if r.get("status") == "archived" else r["name"]
-                for r in releases
-            ]
-            current_rid  = st.session_state.get(f"current_release_{team_id}")
-            current_idx  = next((i for i, r in enumerate(releases) if r["id"] == current_rid), 0)
-            sel_idx = st.selectbox(
-                "Select Release",
-                range(len(release_names)),
-                format_func=lambda i: release_names[i],
-                index=current_idx,
-                label_visibility="collapsed",
+    # Dropdown row: full width
+    if releases:
+        release_names = [
+            f"{r['name']} (Archived)" if r.get("status") == "archived" else r["name"]
+            for r in releases
+        ]
+        current_rid  = st.session_state.get(f"current_release_{team_id}")
+        current_idx  = next((i for i, r in enumerate(releases) if r["id"] == current_rid), 0)
+        sel_idx = st.selectbox(
+            "Select Release",
+            range(len(release_names)),
+            format_func=lambda i: release_names[i],
+            index=current_idx,
+            label_visibility="collapsed",
+        )
+        selected_release = releases[sel_idx]
+        if selected_release["id"] != current_rid:
+            st.session_state[f"current_release_{team_id}"] = selected_release["id"]
+            st.rerun()
+    else:
+        if not show_archived:
+            st.markdown("### Welcome to Release Estimation")
+            st.markdown(
+                "This tool helps your team answer: **when will we finish, and how confident are we?**\n\n"
+                "It uses your team's velocity estimates and backlog size to project a completion date "
+                "at a confidence level you choose — no historical sprint data required.\n\n"
+                "**To get started:** click **+ New Release** above, name your release, "
+                "then add scenarios with your velocity estimates and backlog size."
             )
-            selected_release = releases[sel_idx]
-            if selected_release["id"] != current_rid:
-                st.session_state[f"current_release_{team_id}"] = selected_release["id"]
-                st.rerun()
         else:
-            if not show_archived:
-                st.markdown("### Welcome to Release Estimation")
-                st.markdown(
-                    "This tool helps your team answer: **when will we finish, and how confident are we?**\n\n"
-                    "It uses your team's velocity estimates and backlog size to project a completion date "
-                    "at a confidence level you choose — no historical sprint data required.\n\n"
-                    "**To get started:** click **+ New Release** above, name your release, "
-                    "then add scenarios with your velocity estimates and backlog size."
-                )
-            else:
-                st.info("No releases found.")
+            st.info("No releases found.")
 
     if st.session_state.get(f"creating_release_{team_id}"):
         with st.form(f"new_release_{team_id}"):
