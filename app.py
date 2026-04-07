@@ -3,6 +3,9 @@ from datetime import date as date_type, datetime
 import streamlit as st
 import httpx
 from supabase import create_client, Client
+import io
+import csv
+import uuid
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -323,10 +326,101 @@ def save_team_config(team_id: str, data: dict):
 # ── Release helpers ────────────────────────────────────────────────────────────
 def get_releases(team_id: str) -> list:
     try:
-        r = db().table("releases").select("id, name").eq("team_id", team_id).order("created_at").execute()
+        r = db().table("releases").select("id, name, share_token").eq("team_id", team_id).order("created_at").execute()
         return r.data or []
     except Exception:
         return []
+
+
+def set_release_share_token(release_id: str, token: str | None):
+    db().table("releases").update({"share_token": token}).eq("id", release_id).execute()
+
+
+def get_public_release_data(token: str) -> dict | None:
+    """Fetch release + team info using the share token. No auth required."""
+    try:
+        r = get_supabase_public().table("releases").select(
+            "id, name, teams(name, unit_label)"
+        ).eq("share_token", token).execute()
+        if not r.data:
+            return None
+        row        = r.data[0]
+        team_data  = row.get("teams") or {}
+        return {
+            "release_id":   row["id"],
+            "release_name": row["name"],
+            "team_name":    team_data.get("name", ""),
+            "unit_label":   team_data.get("unit_label") or "points",
+        }
+    except Exception:
+        return None
+
+
+def get_public_scenarios(release_id: str) -> list:
+    """Fetch scenarios without auth for the shared view."""
+    try:
+        r = get_supabase_public().table("scenarios").select("*").eq(
+            "release_id", release_id
+        ).order("sort_order").execute()
+        return r.data or []
+    except Exception:
+        return []
+
+
+def generate_release_csv(scenarios: list, release_name: str, unit_label: str) -> str:
+    """Return CSV string for all valid scenarios in a release."""
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Scenario", "Sprint Length (weeks)", f"Backlog ({unit_label})", "Start Date",
+        f"Most Likely ({unit_label}/sprint)", f"Worst Case ({unit_label}/sprint)",
+        f"Best Case ({unit_label}/sprint)", "Confidence in Most Likely",
+        "Desired Confidence", "Std Dev Override", "Extra Days",
+        "PERT Mean", "Std Dev", "Guaranteed Min Velocity",
+        "Raw Sprints", "Sprint Completed In", "Business Weeks",
+        "Total Calendar Days", "Projected Date",
+    ])
+    for s in scenarios:
+        try:
+            ml  = float(s.get("most_likely") or 0)
+            wc  = float(s.get("worst_case")  or 0)
+            bc  = float(s.get("best_case")   or 0)
+            if not ml or wc >= ml or bc <= ml:
+                continue
+            sdo = float(s.get("std_dev_override") or 0) or None
+            raw = s.get("start_date")
+            sd  = datetime.strptime(raw, "%Y-%m-%d").date() if isinstance(raw, str) else date_type.today()
+            r   = compute_estimate(
+                most_likely=ml, worst_case=wc, best_case=bc,
+                confidence_label=s.get("confidence_label") or "Medium confidence",
+                desired_confidence=float(s.get("desired_confidence") or 0.80),
+                backlog=float(s.get("backlog") or 1),
+                sprint_weeks=int(s.get("sprint_weeks") or 2),
+                start_date=sd, std_dev_override=sdo,
+                extra_days=int(s.get("extra_days") or 0),
+            )
+            writer.writerow([
+                s["name"],
+                s.get("sprint_weeks", 2),
+                s.get("backlog", ""),
+                s.get("start_date", ""),
+                ml, wc, bc,
+                s.get("confidence_label", ""),
+                f"{float(s.get('desired_confidence') or 0.80):.0%}",
+                s.get("std_dev_override", ""),
+                s.get("extra_days", 0),
+                round(r["pert_mean"], 2),
+                round(r["std_dev"], 2),
+                round(r["guaranteed_min"], 2),
+                round(r["sprints_raw"], 2),
+                f"Sprint {r['sprints_rounded']}",
+                r["business_weeks"],
+                r["total_days"],
+                r["projected_date"].strftime("%Y-%m-%d"),
+            ])
+        except Exception:
+            continue
+    return output.getvalue()
 
 
 def create_release(team_id: str, name: str, defaults: dict = None) -> str:
@@ -1069,6 +1163,86 @@ def page_estimation():
         st.subheader("Comparison")
         _render_comparison(scenarios)
 
+    # ── Share & Export ────────────────────────────────────────────────────────
+    st.divider()
+    with st.expander("Share & Export"):
+
+        # Shareable link
+        st.markdown("**Shareable Link**")
+        current_token = release.get("share_token")
+        if current_token:
+            share_url = f"{st.secrets['app_url']}?share={current_token}"
+            st.code(share_url, language=None)
+            st.caption("Anyone with this link can view a read-only snapshot of this release.")
+            if st.button("Revoke Link", key=f"revoke_{release_id}"):
+                set_release_share_token(release_id, None)
+                st.toast("Shareable link revoked.")
+                st.rerun()
+        else:
+            if st.button("Generate Shareable Link", key=f"share_{release_id}"):
+                token = str(uuid.uuid4())
+                set_release_share_token(release_id, token)
+                st.rerun()
+
+        st.divider()
+
+        # CSV export
+        st.markdown("**CSV Export**")
+        csv_data = generate_release_csv(scenarios, release["name"], unit_label)
+        st.download_button(
+            label="Download CSV",
+            data=csv_data,
+            file_name=f"{release['name'].replace(' ', '_')}_scenarios.csv",
+            mime="text/csv",
+            key=f"csv_{release_id}",
+        )
+        st.caption("Includes inputs and computed outputs for all valid scenarios.")
+
+        st.divider()
+
+        # Copy-to-clipboard summary
+        st.markdown("**Plain-Text Summary**")
+        st.caption("Click the copy icon in the top-right corner of the box below.")
+        lines = [
+            f"Release Estimation Summary",
+            f"{'=' * 40}",
+            f"Team:    {team_name}",
+            f"Release: {release['name']}",
+            f"",
+        ]
+        for s in scenarios:
+            try:
+                ml  = float(s.get("most_likely") or 0)
+                wc  = float(s.get("worst_case")  or 0)
+                bc  = float(s.get("best_case")   or 0)
+                if not ml or wc >= ml or bc <= ml:
+                    continue
+                sdo = float(s.get("std_dev_override") or 0) or None
+                raw = s.get("start_date")
+                sd  = datetime.strptime(raw, "%Y-%m-%d").date() if isinstance(raw, str) else date_type.today()
+                r   = compute_estimate(
+                    most_likely=ml, worst_case=wc, best_case=bc,
+                    confidence_label=s.get("confidence_label") or "Medium confidence",
+                    desired_confidence=float(s.get("desired_confidence") or 0.80),
+                    backlog=float(s.get("backlog") or 1),
+                    sprint_weeks=int(s.get("sprint_weeks") or 2),
+                    start_date=sd, std_dev_override=sdo,
+                    extra_days=int(s.get("extra_days") or 0),
+                )
+                dc = float(s.get("desired_confidence") or 0.80)
+                lines += [
+                    f"Scenario: {s['name']}",
+                    f"  Confidence:          {dc:.0%}",
+                    f"  Projected Date:      {r['projected_date'].strftime('%B %d, %Y')}",
+                    f"  Business Weeks:      {r['business_weeks']}",
+                    f"  Sprint Completed In: Sprint {r['sprints_rounded']}",
+                    f"  Min Velocity:        {r['guaranteed_min']:.1f} {unit_label}/sprint",
+                    f"",
+                ]
+            except Exception:
+                continue
+        st.code("\n".join(lines), language=None)
+
 
 def page_configuration():
     team_id   = st.session_state["current_team_id"]
@@ -1152,6 +1326,81 @@ def page_configuration():
             st.rerun()
 
 
+# ── Shared release (public, no login) ─────────────────────────────────────────
+def page_shared_release(token: str):
+    data = get_public_release_data(token)
+    if not data:
+        st.error("This link is invalid or has been revoked.")
+        return
+
+    st.title(f"{data['release_name']}")
+    st.caption(f"Team: {data['team_name']}  •  Read-only view")
+    st.divider()
+
+    unit_label = data["unit_label"]
+    scenarios  = get_public_scenarios(data["release_id"])
+
+    if not scenarios:
+        st.info("No scenarios have been saved for this release.")
+        return
+
+    tabs = st.tabs([s["name"] for s in scenarios])
+    for tab, s in zip(tabs, scenarios):
+        with tab:
+            try:
+                ml  = float(s.get("most_likely") or 0)
+                wc  = float(s.get("worst_case")  or 0)
+                bc  = float(s.get("best_case")   or 0)
+                if not ml or wc >= ml or bc <= ml:
+                    st.info("Inputs not yet complete for this scenario.")
+                    continue
+                sdo = float(s.get("std_dev_override") or 0) or None
+                raw = s.get("start_date")
+                sd  = datetime.strptime(raw, "%Y-%m-%d").date() if isinstance(raw, str) else date_type.today()
+                dc  = float(s.get("desired_confidence") or 0.80)
+                r   = compute_estimate(
+                    most_likely=ml, worst_case=wc, best_case=bc,
+                    confidence_label=s.get("confidence_label") or "Medium confidence",
+                    desired_confidence=dc,
+                    backlog=float(s.get("backlog") or 1),
+                    sprint_weeks=int(s.get("sprint_weeks") or 2),
+                    start_date=sd, std_dev_override=sdo,
+                    extra_days=int(s.get("extra_days") or 0),
+                )
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Projected Date",      r["projected_date"].strftime("%b %d, %Y"))
+                c2.metric("Confidence",          f"{dc:.0%}")
+                c3.metric("Sprint Completed In", f"Sprint {r['sprints_rounded']}")
+                c4.metric("Business Weeks",      r["business_weeks"])
+                st.markdown(
+                    f"At **{dc:.0%} confidence**, this release will complete by "
+                    f"**{r['projected_date'].strftime('%B %d, %Y')}**, finishing in "
+                    f"**Sprint {r['sprints_rounded']}** ({r['business_weeks']} business weeks). "
+                    f"This assumes at least **{r['guaranteed_min']:.1f} {unit_label} per sprint**."
+                )
+                with st.expander("Charts"):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.plotly_chart(_chart_bell_curve(r, dc), use_container_width=True)
+                    with col2:
+                        st.plotly_chart(
+                            _chart_confidence_curve(
+                                ml, wc, bc, s.get("confidence_label") or "Medium confidence",
+                                float(s.get("backlog") or 1), int(s.get("sprint_weeks") or 2),
+                                sd, sdo, int(s.get("extra_days") or 0), dc,
+                            ),
+                            use_container_width=True,
+                        )
+            except Exception:
+                st.info("Could not compute results for this scenario.")
+
+    # Comparison table
+    if len(scenarios) > 1:
+        st.divider()
+        st.subheader("Comparison")
+        _render_comparison(scenarios)
+
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 def show_sidebar():
     with st.sidebar:
@@ -1200,6 +1449,11 @@ def show_sidebar():
 # ── Main ───────────────────────────────────────────────────────────────────────
 def main():
     params = st.query_params
+
+    # Handle shared release (public, no login required)
+    if params.get("share"):
+        page_shared_release(params["share"])
+        return
 
     # Handle password recovery
     if params.get("type") == "recovery":
