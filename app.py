@@ -26,11 +26,13 @@ footer     {visibility: hidden;}
 header     {visibility: hidden;}
 section[data-testid="stSidebar"] {background-color: #1e2a3a;}
 section[data-testid="stSidebar"] * {color: #ffffff !important;}
-section[data-testid="stSidebar"] .stButton > button {
-    background-color: #2c3e50; color: #ffffff; border: none;
+section[data-testid="stSidebar"] .stButton > button,
+section[data-testid="stSidebar"] .stDownloadButton > button {
+    background-color: #2c3e50 !important; color: #ffffff !important; border: none;
     width: 100%; text-align: left;
 }
-section[data-testid="stSidebar"] .stButton > button:hover {background-color: #34495e;}
+section[data-testid="stSidebar"] .stButton > button:hover,
+section[data-testid="stSidebar"] .stDownloadButton > button:hover {background-color: #34495e !important;}
 section[data-testid="stSidebar"] .stSelectbox div[data-baseweb="select"] * {color: #000000 !important;}
 </style>
 """, unsafe_allow_html=True)
