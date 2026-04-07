@@ -581,6 +581,40 @@ def _chart_scenario_comparison(rows: list) -> go.Figure:
 
 
 # ── Scenario render helpers ───────────────────────────────────────────────────
+def _confidence_at_target_date(
+    most_likely, worst_case, best_case, confidence_label,
+    backlog, sprint_weeks, start_date, std_dev_override, extra_days,
+    target_date,
+) -> float | None:
+    """
+    Binary search for the highest desired_confidence where projected_date <= target_date.
+    Returns None if the target date is earlier than what 1% confidence produces.
+    """
+    def projected(c):
+        r = compute_estimate(
+            most_likely=most_likely, worst_case=worst_case, best_case=best_case,
+            confidence_label=confidence_label, desired_confidence=c,
+            backlog=backlog, sprint_weeks=sprint_weeks, start_date=start_date,
+            std_dev_override=std_dev_override, extra_days=extra_days,
+        )
+        return r["projected_date"]
+
+    # At very low confidence the date is earliest; at high confidence it's latest.
+    if projected(0.01) > target_date:
+        return None          # target is earlier than even 1% confidence allows
+    if projected(0.99) <= target_date:
+        return 0.99          # even near-certainty fits within target
+
+    lo, hi = 0.01, 0.99
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if projected(mid) <= target_date:
+            lo = mid
+        else:
+            hi = mid
+    return lo
+
+
 def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_label: str = "points"):
     """Render inputs and results for a single scenario tab."""
     scenario_id = scenario["id"]
@@ -799,6 +833,84 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                 ),
                 use_container_width=True,
             )
+
+    with st.expander("Target Date Analysis"):
+        st.caption(
+            "Enter a date to see what confidence level it corresponds to, "
+            "and what minimum velocity your team would need to hit it."
+        )
+        target_date = st.date_input(
+            "Target Completion Date",
+            value=None,
+            key=f"td_{scenario_id}",
+            min_value=start_date,
+        )
+        if target_date is not None:
+            # ── Confidence at target ───────────────────────────────────────────
+            conf_at_target = _confidence_at_target_date(
+                most_likely=most_likely, worst_case=worst_case, best_case=best_case,
+                confidence_label=confidence_label,
+                backlog=backlog, sprint_weeks=sprint_weeks, start_date=start_date,
+                std_dev_override=std_dev_override, extra_days=extra_days,
+                target_date=target_date,
+            )
+
+            # ── Velocity needed at current confidence ──────────────────────────
+            days_available = (target_date - start_date).days - extra_days
+            if days_available > 0:
+                sprints_available = (days_available / 7) / sprint_weeks
+                velocity_needed   = backlog / sprints_available if sprints_available > 0 else None
+            else:
+                sprints_available = 0
+                velocity_needed   = None
+
+            current_min = result["guaranteed_min"]
+            td_col1, td_col2 = st.columns(2)
+
+            with td_col1:
+                st.markdown("**Confidence this date will be met**")
+                if conf_at_target is None:
+                    st.error(
+                        "This date is earlier than what your velocity estimates allow "
+                        "at any confidence level. The team cannot complete the release by this date "
+                        "given the current inputs."
+                    )
+                else:
+                    st.metric("Confidence at target date", f"{conf_at_target:.0%}")
+                    if conf_at_target >= desired_confidence:
+                        st.success(
+                            f"This date is achievable at your selected confidence "
+                            f"({desired_confidence:.0%}) and beyond."
+                        )
+                    else:
+                        gap = desired_confidence - conf_at_target
+                        st.warning(
+                            f"This date is only achievable at {conf_at_target:.0%} confidence — "
+                            f"{gap:.0%} below your selected level of {desired_confidence:.0%}."
+                        )
+
+            with td_col2:
+                st.markdown("**Minimum velocity needed**")
+                if velocity_needed is None or days_available <= 0:
+                    st.error("Target date does not leave enough time to complete the release.")
+                else:
+                    st.metric(
+                        f"Required min velocity ({unit_label}/sprint)",
+                        f"{velocity_needed:.1f}",
+                        delta=f"{velocity_needed - current_min:+.1f} vs current",
+                        delta_color="inverse",
+                    )
+                    if velocity_needed <= current_min:
+                        st.success(
+                            f"Your current guaranteed minimum ({current_min:.1f} {unit_label}/sprint) "
+                            "already meets this target."
+                        )
+                    else:
+                        st.warning(
+                            f"Your team needs {velocity_needed:.1f} {unit_label}/sprint guaranteed — "
+                            f"{velocity_needed - current_min:.1f} more than your current minimum of "
+                            f"{current_min:.1f}."
+                        )
 
 
 def _render_comparison(scenarios: list):
