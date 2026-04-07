@@ -506,8 +506,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
             "std_dev_override":   std_dev_override,
             "extra_days":         extra_days,
         })
-        st.session_state["scenario_saved"] = True
-        st.rerun()
+        st.toast("Changes saved.")
 
     # Validation
     st.divider()
@@ -780,7 +779,6 @@ def page_estimation():
         ("release_created",     None),
         ("release_deleted",     None),
         ("release_renamed",     None),
-        ("scenario_saved",      "Scenario saved."),
         ("scenario_created",    None),
         ("scenario_deleted",    None),
         ("scenario_renamed",    None),
