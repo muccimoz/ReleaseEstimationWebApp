@@ -642,7 +642,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
             st.rerun()
 
     # Manage scenario
-    with st.expander("Rename, Duplicate, or Delete this Scenario"):
+    with st.expander("Manage Scenario"):
         col_a, col_b, col_c = st.columns(3)
         with col_a:
             new_sname = st.text_input("New Name", value=scenario["name"], key=f"sname_{scenario_id}")
@@ -824,8 +824,9 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
     st.markdown(
         f"At **{desired_confidence:.0%} confidence**, your team will complete "
         f"**{release['name']}** by **{result['projected_date'].strftime('%B %d, %Y')}**. "
-        f"This assumes completing at least **{result['guaranteed_min']:.1f} {unit_label} per sprint** "
-        f"finishing in **Sprint {result['sprints_rounded']}** ({result['business_weeks']} business weeks)."
+        f"The work is estimated to complete in **Sprint {result['sprints_rounded']}**, "
+        f"requiring at least **{result['guaranteed_min']:.1f} {unit_label} per sprint** "
+        f"across **{result['business_weeks']} business weeks**."
     )
 
     with st.expander("Calculation Details"):
@@ -1180,8 +1181,14 @@ def page_estimation():
     show_archived = st.session_state.get(f"show_archived_{team_id}", False)
     releases      = get_releases(team_id, include_archived=show_archived)
 
-    col_rel_hdr, col_new = st.columns([5, 1])
+    col_rel_hdr, col_archived, col_new = st.columns([4, 2, 1])
     col_rel_hdr.subheader("Releases")
+    with col_archived:
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+        new_archived = st.toggle("Show Archived", value=show_archived, key=f"archived_toggle_{team_id}")
+        if new_archived != show_archived:
+            st.session_state[f"show_archived_{team_id}"] = new_archived
+            st.rerun()
     with col_new:
         if st.button("+ New Release", use_container_width=True):
             st.session_state[f"creating_release_{team_id}"] = True
@@ -1218,19 +1225,6 @@ def page_estimation():
             else:
                 st.info("No releases found.")
 
-    if st.toggle(
-        "Show Archived",
-        value=show_archived,
-        key=f"archived_toggle_{team_id}",
-    ):
-        if not show_archived:
-            st.session_state[f"show_archived_{team_id}"] = True
-            st.rerun()
-    else:
-        if show_archived:
-            st.session_state[f"show_archived_{team_id}"] = False
-            st.rerun()
-
     if st.session_state.get(f"creating_release_{team_id}"):
         with st.form(f"new_release_{team_id}"):
             rname = st.text_input("Release Name", placeholder="e.g. v1.0, Q3 Release")
@@ -1263,7 +1257,7 @@ def page_estimation():
 
     # Rename / archive / delete release
     is_archived = release.get("status") == "archived"
-    with st.expander("Rename, Archive, or Delete this Release"):
+    with st.expander("Manage Release"):
         c1, c2, c3 = st.columns(3)
         with c1:
             new_rname = st.text_input("New Name", value=release["name"], key=f"rname_{release_id}")
