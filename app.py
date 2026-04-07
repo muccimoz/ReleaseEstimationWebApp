@@ -1073,6 +1073,12 @@ def page_estimation():
 def page_configuration():
     team_id   = st.session_state["current_team_id"]
     team_name = st.session_state.get("current_team_name", "Team")
+
+    # Clear widget cache before rendering if reset was requested
+    if st.session_state.pop("cfg_reset_pending", False):
+        for k in ["cfg_unit", "cfg_sw", "cfg_dc", "cfg_cl"]:
+            st.session_state.pop(k, None)
+
     st.title(f"Configuration — {team_name}")
 
     if st.session_state.pop("config_saved", False):
@@ -1140,10 +1146,7 @@ def page_configuration():
                 "default_desired_confidence": 0.80,
                 "default_confidence_label":   "Medium confidence",
             })
-            st.session_state["cfg_unit"] = "points"
-            st.session_state["cfg_sw"]   = 2
-            st.session_state["cfg_dc"]   = 80
-            st.session_state["cfg_cl"]   = "Medium confidence"
+            st.session_state["cfg_reset_pending"] = True
             st.session_state["config_saved"] = True
             st.rerun()
 
