@@ -1061,7 +1061,7 @@ def page_teams():
     with st.expander("How to use this page"):
         st.markdown("""
 - Each team has its own releases, scenarios, and configuration settings.
-- Click **Open** to go to the Estimation page for that team.
+- Click **Open** to go to the Estimation page for that team. Once a team is open, use the sidebar to switch between **Estimation** and **Configuration**.
 - Use **Add New Team** to create a separate team for each group you want to track independently.
 - Use **Rename** to update a team's name, or **Delete** to permanently remove it and all its data.
         """)
