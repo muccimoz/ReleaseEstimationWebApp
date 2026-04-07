@@ -3,7 +3,10 @@ from datetime import date as date_type, datetime
 import streamlit as st
 import httpx
 from supabase import create_client, Client
+import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
+from scipy.stats import norm as scipy_norm
 from calculations import compute_estimate, CONFIDENCE_LABELS
 
 st.set_page_config(
@@ -366,6 +369,94 @@ def save_scenario_by_id(scenario_id: str, data: dict):
         pass
 
 
+# ── Chart helpers ─────────────────────────────────────────────────────────────
+def _chart_bell_curve(result: dict, desired_confidence: float) -> go.Figure:
+    mean = result["pert_mean"]
+    std  = result["std_dev"]
+    gmin = result["guaranteed_min"]
+
+    x     = np.linspace(mean - 4 * std, mean + 4 * std, 300)
+    y     = scipy_norm.pdf(x, mean, std)
+    x_lo  = x[x <= gmin]
+    y_lo  = scipy_norm.pdf(x_lo, mean, std)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=x, y=y, mode="lines",
+                             line=dict(color="#2c3e50", width=2), showlegend=False))
+    fig.add_trace(go.Scatter(
+        x=np.append(x_lo, [gmin, x_lo[0]]),
+        y=np.append(y_lo, [0, 0]),
+        fill="toself", fillcolor="rgba(231,76,60,0.25)",
+        line=dict(color="rgba(0,0,0,0)"), showlegend=False,
+    ))
+    fig.add_vline(x=gmin, line_dash="dash", line_color="#e74c3c",
+                  annotation_text=f"Min: {gmin:.1f}", annotation_position="top right")
+    fig.add_vline(x=mean, line_dash="dot", line_color="#2980b9",
+                  annotation_text=f"Mean: {mean:.1f}", annotation_position="top left")
+    fig.update_layout(
+        title=f"Velocity Distribution — {desired_confidence:.0%} confidence threshold",
+        xaxis_title="Points per Sprint", yaxis_title="Probability",
+        height=280, margin=dict(l=10, r=10, t=50, b=40),
+    )
+    return fig
+
+
+def _chart_confidence_curve(most_likely, worst_case, best_case, confidence_label,
+                             backlog, sprint_weeks, start_date,
+                             std_dev_override, extra_days, current_confidence) -> go.Figure:
+    confidences = np.linspace(0.10, 0.99, 60)
+    dates = []
+    for c in confidences:
+        r = compute_estimate(
+            most_likely=most_likely, worst_case=worst_case, best_case=best_case,
+            confidence_label=confidence_label, desired_confidence=c,
+            backlog=backlog, sprint_weeks=sprint_weeks, start_date=start_date,
+            std_dev_override=std_dev_override, extra_days=extra_days,
+        )
+        dates.append(r["projected_date"])
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=[f"{c:.0%}" for c in confidences], y=dates,
+        mode="lines", line=dict(color="#2c3e50", width=2), showlegend=False,
+    ))
+    # Mark current confidence level
+    current_idx = int(round((current_confidence - 0.10) / (0.99 - 0.10) * 59))
+    current_idx = max(0, min(59, current_idx))
+    fig.add_trace(go.Scatter(
+        x=[f"{current_confidence:.0%}"], y=[dates[current_idx]],
+        mode="markers", marker=dict(color="#e74c3c", size=10), showlegend=False,
+    ))
+    fig.update_layout(
+        title="Projected Date by Confidence Level",
+        xaxis_title="Confidence", yaxis_title="Projected Date",
+        xaxis=dict(tickangle=45),
+        height=280, margin=dict(l=10, r=10, t=50, b=60),
+    )
+    return fig
+
+
+def _chart_scenario_comparison(rows: list) -> go.Figure:
+    """Horizontal bar chart — business weeks per scenario."""
+    names = [r["Scenario"] for r in rows]
+    weeks = [r["_weeks"] for r in rows]
+    dates = [r["Projected Date"] for r in rows]
+
+    fig = go.Figure(go.Bar(
+        x=weeks, y=names, orientation="h",
+        marker_color="#2c3e50",
+        text=[f"{w} wks  ({d})" for w, d in zip(weeks, dates)],
+        textposition="outside",
+    ))
+    fig.update_layout(
+        title="Business Weeks to Completion by Scenario",
+        xaxis_title="Business Weeks", yaxis_title="",
+        height=max(200, 60 * len(rows) + 80),
+        margin=dict(l=10, r=120, t=50, b=40),
+    )
+    return fig
+
+
 # ── Scenario render helpers ───────────────────────────────────────────────────
 def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
     """Render inputs and results for a single scenario tab."""
@@ -569,6 +660,23 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
         col2.write(f"Sprint completed in: Sprint {result['sprints_rounded']}")
         col2.write(f"Total calendar days: {result['total_days']}")
 
+    with st.expander("Charts"):
+        col1, col2 = st.columns(2)
+        with col1:
+            st.plotly_chart(
+                _chart_bell_curve(result, desired_confidence),
+                use_container_width=True,
+            )
+        with col2:
+            st.plotly_chart(
+                _chart_confidence_curve(
+                    most_likely, worst_case, best_case, confidence_label,
+                    backlog, sprint_weeks, start_date,
+                    std_dev_override, extra_days, desired_confidence,
+                ),
+                use_container_width=True,
+            )
+
 
 def _render_comparison(scenarios: list):
     """Render side-by-side results table for all valid scenarios using live widget values."""
@@ -606,6 +714,7 @@ def _render_comparison(scenarios: list):
                 "Confidence":          f"{dc:.0%}",
                 "Sprint Completed In": f"Sprint {result['sprints_rounded']}",
                 "Business Weeks":      result["business_weeks"],
+                "_weeks":              result["business_weeks"],
             })
         except Exception:
             continue
@@ -614,8 +723,11 @@ def _render_comparison(scenarios: list):
         st.info("No valid scenarios to compare yet. Complete the inputs in at least two scenarios.")
         return
 
-    df = pd.DataFrame(rows).set_index("Scenario")
+    display_rows = [{k: v for k, v in r.items() if k != "_weeks"} for r in rows]
+    df = pd.DataFrame(display_rows).set_index("Scenario")
     st.dataframe(df, use_container_width=True)
+
+    st.plotly_chart(_chart_scenario_comparison(rows), use_container_width=True)
 
 
 # ── Pages ──────────────────────────────────────────────────────────────────────
