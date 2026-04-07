@@ -372,6 +372,20 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
     scenario_id = scenario["id"]
     release_id  = release["id"]
 
+    # Delete confirmation — rendered at tab level so it's always visible
+    if st.session_state.get(f"confirm_del_s_{scenario_id}"):
+        st.warning(f"Delete **{scenario['name']}**? This cannot be undone.")
+        ca, cb = st.columns(2)
+        if ca.button("Yes, delete", key=f"yes_del_s_{scenario_id}"):
+            delete_scenario(scenario_id)
+            st.session_state.pop(f"confirm_del_s_{scenario_id}", None)
+            st.session_state["scenario_deleted"]      = True
+            st.session_state["scenario_deleted_name"] = f"Scenario '{scenario['name']}' deleted."
+            st.rerun()
+        if cb.button("Cancel", key=f"no_del_s_{scenario_id}"):
+            st.session_state.pop(f"confirm_del_s_{scenario_id}", None)
+            st.rerun()
+
     # Manage scenario
     with st.expander("Rename, Duplicate, or Delete this Scenario"):
         col_a, col_b, col_c = st.columns(3)
@@ -404,19 +418,6 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
             else:
                 st.caption("Cannot delete the only scenario.")
 
-        if st.session_state.get(f"confirm_del_s_{scenario_id}"):
-            st.warning(f"Delete **{scenario['name']}**? This cannot be undone.")
-            ca, cb = st.columns(2)
-            if ca.button("Yes, delete", key=f"yes_del_s_{scenario_id}"):
-                delete_scenario(scenario_id)
-                st.session_state.pop(f"confirm_del_s_{scenario_id}", None)
-                st.session_state["scenario_deleted"]      = True
-                st.session_state["scenario_deleted_name"] = f"Scenario '{scenario['name']}' deleted."
-                st.rerun()
-            if cb.button("Cancel", key=f"no_del_s_{scenario_id}"):
-                st.session_state.pop(f"confirm_del_s_{scenario_id}", None)
-                st.rerun()
-
     # Inputs
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -444,19 +445,19 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
     with col1:
         most_likely = st.number_input(
             "Most Likely", min_value=0.1,
-            value=float(scenario.get("most_likely") or 18.0),
+            value=float(scenario.get("most_likely") or 0.1),
             step=0.5, key=f"ml_{scenario_id}",
         )
     with col2:
         worst_case = st.number_input(
             "Worst Case", min_value=0.1,
-            value=float(scenario.get("worst_case") or 10.0),
+            value=float(scenario.get("worst_case") or 0.1),
             step=0.5, key=f"wc_{scenario_id}",
         )
     with col3:
         best_case = st.number_input(
             "Best Case", min_value=0.1,
-            value=float(scenario.get("best_case") or 28.0),
+            value=float(scenario.get("best_case") or 0.1),
             step=0.5, key=f"bc_{scenario_id}",
         )
     with col4:
@@ -510,6 +511,9 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int):
 
     # Validation
     st.divider()
+    if scenario.get("most_likely") is None:
+        st.info("Enter your velocity estimates above to see projected results.")
+        return
     if worst_case >= most_likely:
         st.warning("Worst case must be less than most likely.")
         return
