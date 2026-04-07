@@ -1624,6 +1624,19 @@ def show_sidebar():
                     st.rerun()
 
         st.markdown("---")
+        try:
+            with open("Release_Estimation_Guide.pdf", "rb") as f:
+                st.download_button(
+                    label="Download Reference Guide",
+                    data=f.read(),
+                    file_name="Release_Estimation_Guide.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+        except FileNotFoundError:
+            pass
+
+        st.markdown("---")
         if st.button("Log Out", use_container_width=True):
             do_logout()
             st.rerun()
