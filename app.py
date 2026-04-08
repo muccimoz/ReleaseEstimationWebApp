@@ -517,16 +517,16 @@ def _chart_bell_curve(result: dict, desired_confidence: float) -> go.Figure:
     ))
     fig.add_vline(x=gmin, line_dash="dash", line_color="#e74c3c")
     fig.add_vline(x=mean, line_dash="dot",  line_color="#2980b9")
-    fig.add_annotation(x=gmin, y=1.08, yref="paper", xref="x",
-                       text=f"Min: {gmin:.1f}", showarrow=False,
-                       font=dict(color="#e74c3c", size=12), xanchor="left")
-    fig.add_annotation(x=mean, y=1.08, yref="paper", xref="x",
-                       text=f"Mean: {mean:.1f}", showarrow=False,
-                       font=dict(color="#2980b9", size=12), xanchor="right")
+    fig.add_annotation(x=gmin, y=1.14, yref="paper", xref="x",
+                       text=f"Min:<br><b>{gmin:.1f}</b>", showarrow=False,
+                       font=dict(color="#e74c3c", size=11), xanchor="left", align="left")
+    fig.add_annotation(x=mean, y=1.14, yref="paper", xref="x",
+                       text=f"Mean:<br><b>{mean:.1f}</b>", showarrow=False,
+                       font=dict(color="#2980b9", size=11), xanchor="right", align="right")
     fig.update_layout(
         title=f"Velocity Distribution — {desired_confidence:.0%} confidence threshold",
         xaxis_title="Points per Sprint", yaxis_title="Probability",
-        height=280, margin=dict(l=10, r=10, t=50, b=40),
+        height=300, margin=dict(l=10, r=10, t=70, b=40),
     )
     return fig
 
@@ -556,6 +556,10 @@ def _chart_confidence_curve(most_likely, worst_case, best_case, confidence_label
     fig.add_trace(go.Scatter(
         x=[f"{current_confidence:.0%}"], y=[dates[current_idx]],
         mode="markers", marker=dict(color="#e74c3c", size=10), showlegend=False,
+        name="Selected confidence",
+        hovertemplate=f"<b>Selected confidence:</b> {current_confidence:.0%}<br>"
+                      f"<b>Projected date:</b> {dates[current_idx].strftime('%b %d, %Y')}"
+                      "<extra></extra>",
     ))
     fig.update_layout(
         title="Projected Date by Confidence Level",
