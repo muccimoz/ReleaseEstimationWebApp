@@ -595,6 +595,29 @@ def _chart_scenario_comparison(rows: list) -> go.Figure:
 
 # ── Scenario render helpers ───────────────────────────────────────────────────
 
+@st.dialog("Delete Release")
+def _dialog_delete_release():
+    release_id   = st.session_state.get("_del_release_id")
+    release_name = st.session_state.get("_del_release_name", "this release")
+    team_id      = st.session_state.get("_del_release_team_id")
+    st.warning(f"Delete **{release_name}**? This cannot be undone.")
+    ca, cb = st.columns(2)
+    if ca.button("Yes, delete", key="dialog_yes_del_r"):
+        delete_release(release_id)
+        st.session_state.pop("_del_release_id",      None)
+        st.session_state.pop("_del_release_name",    None)
+        st.session_state.pop("_del_release_team_id", None)
+        st.session_state.pop(f"current_release_{team_id}", None)
+        st.session_state["release_deleted"]      = True
+        st.session_state["release_deleted_name"] = f"Release '{release_name}' deleted."
+        st.rerun()
+    if cb.button("Cancel", key="dialog_cancel_del_r"):
+        st.session_state.pop("_del_release_id",      None)
+        st.session_state.pop("_del_release_name",    None)
+        st.session_state.pop("_del_release_team_id", None)
+        st.rerun()
+
+
 @st.dialog("Delete Scenario")
 def _dialog_delete_scenario():
     scenario_id   = st.session_state.get("_del_scenario_id")
@@ -1312,20 +1335,13 @@ def page_estimation():
         with c3:
             st.markdown("&nbsp;", unsafe_allow_html=True)
             if st.button("Delete this Release", key=f"del_r_{release_id}"):
-                st.session_state[f"confirm_del_r_{release_id}"] = True
+                st.session_state["_del_release_id"]      = release_id
+                st.session_state["_del_release_name"]    = release["name"]
+                st.session_state["_del_release_team_id"] = team_id
                 st.rerun()
-        if st.session_state.get(f"confirm_del_r_{release_id}"):
-            st.warning(f"Delete **{release['name']}**? This cannot be undone.")
-            ca, cb = st.columns(2)
-            if ca.button("Yes, delete", key=f"yes_del_r_{release_id}"):
-                delete_release(release_id)
-                st.session_state.pop(f"current_release_{team_id}", None)
-                st.session_state["release_deleted"]      = True
-                st.session_state["release_deleted_name"] = f"Release '{release['name']}' deleted."
-                st.rerun()
-            if cb.button("Cancel", key=f"no_del_r_{release_id}"):
-                st.session_state.pop(f"confirm_del_r_{release_id}", None)
-                st.rerun()
+
+    if st.session_state.get("_del_release_id") == release_id:
+        _dialog_delete_release()
 
     st.divider()
 
