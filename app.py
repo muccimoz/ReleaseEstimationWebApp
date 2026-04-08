@@ -700,7 +700,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                 next_order = max((s["sort_order"] for s in all_s), default=0) + 1
                 new_name   = f"{scenario['name']} (copy)"
                 new_id     = duplicate_scenario(scenario, new_name, next_order)
-                st.session_state[f"current_scenario_{release_id}"] = new_id
+                st.session_state[f"_nav_to_scenario_{release_id}"] = new_id
                 st.session_state["scenario_duplicated"]      = True
                 st.session_state["scenario_duplicated_name"] = f"Duplicated as '{new_name}'."
                 st.rerun()
@@ -1362,25 +1362,31 @@ def page_estimation():
                     "confidence_label":   team_cfg.get("default_confidence_label"),
                     "desired_confidence": team_cfg.get("default_desired_confidence"),
                 })
-                st.session_state[f"current_scenario_{release_id}"] = new_id
+                st.session_state[f"_nav_to_scenario_{release_id}"] = new_id
                 st.session_state["scenario_created"]      = True
                 st.session_state["scenario_created_name"] = f"'{new_name}' created."
                 st.rerun()
         return
 
-    # Resolve current scenario selection
-    current_sid = st.session_state.get(f"current_scenario_{release_id}")
-    if not current_sid or not any(s["id"] == current_sid for s in scenarios):
-        current_sid = scenarios[0]["id"]
-        st.session_state[f"current_scenario_{release_id}"] = current_sid
+    # Resolve current scenario index — widget state is the source of truth.
+    # Programmatic navigation (create, duplicate) uses a one-time _nav flag to
+    # override widget state without clobbering user selections on normal reruns.
+    nav_to_sid = st.session_state.pop(f"_nav_to_scenario_{release_id}", None)
+    widget_idx = st.session_state.get(f"scenario_sel_{release_id}", 0)
+    widget_idx = min(widget_idx, len(scenarios) - 1)
+
+    if nav_to_sid:
+        nav_idx = next((i for i, s in enumerate(scenarios) if s["id"] == nav_to_sid), None)
+        if nav_idx is not None:
+            widget_idx = nav_idx
+            st.session_state[f"scenario_sel_{release_id}"] = widget_idx
+
+    current_idx = widget_idx
+    current_sid = scenarios[current_idx]["id"]
+    st.session_state[f"current_scenario_{release_id}"] = current_sid
 
     # Scenario selector header row
     scenario_names = [s["name"] for s in scenarios]
-    current_idx    = next((i for i, s in enumerate(scenarios) if s["id"] == current_sid), 0)
-
-    # Sync widget state to current_sid so programmatic navigation (create, duplicate) takes effect
-    st.session_state[f"scenario_sel_{release_id}"] = current_idx
-
     col_sc_hdr, col_sc_sel, col_sc_new = st.columns([2, 4, 1], vertical_alignment="bottom")
     col_sc_hdr.subheader("Scenarios")
     with col_sc_sel:
@@ -1404,7 +1410,7 @@ def page_estimation():
                 "confidence_label":   team_cfg.get("default_confidence_label"),
                 "desired_confidence": team_cfg.get("default_desired_confidence"),
             })
-            st.session_state[f"current_scenario_{release_id}"] = new_id
+            st.session_state[f"_nav_to_scenario_{release_id}"] = new_id
             st.session_state["scenario_created"]      = True
             st.session_state["scenario_created_name"] = f"'{new_name}' created."
             st.rerun()
