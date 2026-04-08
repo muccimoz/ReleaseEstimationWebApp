@@ -596,6 +596,17 @@ def _chart_scenario_comparison(rows: list) -> go.Figure:
 
 # ── Scenario render helpers ───────────────────────────────────────────────────
 
+def _buffer_scenario_widgets(scenario_id: str):
+    """Snapshot current widget values before switching away so unsaved edits survive."""
+    prefixes = ["sw", "bl", "sd", "wc", "ml", "bc", "cl", "dc", "ed", "sdo"]
+    buffer = {
+        f"{p}_{scenario_id}": st.session_state[f"{p}_{scenario_id}"]
+        for p in prefixes
+        if f"{p}_{scenario_id}" in st.session_state
+    }
+    if buffer:
+        st.session_state[f"_widget_buf_{scenario_id}"] = buffer
+
 @st.dialog("Delete Release")
 def _dialog_delete_release():
     release_id   = st.session_state.get("_del_release_id")
@@ -676,6 +687,12 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
     """Render inputs and results for a single scenario tab."""
     scenario_id = scenario["id"]
     release_id  = release["id"]
+
+    # Restore any buffered unsaved edits (e.g. after switching scenarios and returning)
+    buf = st.session_state.pop(f"_widget_buf_{scenario_id}", None)
+    if buf:
+        for key, val in buf.items():
+            st.session_state[key] = val
 
     # Delete confirmation — shown as a modal dialog
     if st.session_state.get("_del_scenario_id") == scenario_id:
@@ -820,6 +837,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
         if err:
             st.error(f"Save failed: {err}")
         else:
+            st.session_state.pop(f"_widget_buf_{scenario_id}", None)
             st.toast("Changes saved.")
 
     # Validation
@@ -1406,6 +1424,7 @@ def page_estimation():
             key=f"scenario_sel_{release_id}",
         )
         if sel_idx != current_idx:
+            _buffer_scenario_widgets(current_sid)
             st.session_state[f"current_scenario_{release_id}"] = scenarios[sel_idx]["id"]
             st.rerun()
     with col_sc_new:
