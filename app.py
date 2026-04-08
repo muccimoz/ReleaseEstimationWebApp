@@ -128,6 +128,10 @@ def clear_session():
     for key in ["access_token", "refresh_token", "expires_at", "user_id", "user_email",
                 "current_team_id", "current_team_name", "page", "supabase_client", "session_id"]:
         st.session_state.pop(key, None)
+    # Clear unsaved widget buffers so edits don't survive a logout
+    for key in list(st.session_state.keys()):
+        if key.startswith("_widget_buf_"):
+            del st.session_state[key]
 
 
 # ── Server-side session store ──────────────────────────────────────────────────
