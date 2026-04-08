@@ -781,7 +781,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
 
     # Validation
     st.divider()
-    if scenario.get("most_likely") is None:
+    if scenario.get("most_likely") is None and most_likely == 0.1 and worst_case == 0.1 and best_case == 0.1:
         st.info("Enter your velocity estimates above to see projected results.")
         return
     if worst_case >= most_likely:
