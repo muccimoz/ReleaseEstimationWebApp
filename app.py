@@ -630,11 +630,11 @@ def _dialog_delete_scenario():
         st.session_state.pop("_del_scenario_name", None)
         st.session_state["scenario_deleted"]      = True
         st.session_state["scenario_deleted_name"] = f"Scenario '{scenario_name}' deleted."
-        st.rerun(scope="app")
+        st.rerun()
     if cb.button("Cancel", key="dialog_cancel_del"):
         st.session_state.pop("_del_scenario_id",   None)
         st.session_state.pop("_del_scenario_name", None)
-        st.rerun(scope="app")
+        st.rerun()
 
 
 def _confidence_at_target_date(
@@ -671,7 +671,6 @@ def _confidence_at_target_date(
     return lo
 
 
-@st.fragment
 def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_label: str = "points"):
     """Render inputs and results for a single scenario tab."""
     scenario_id = scenario["id"]
@@ -691,7 +690,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                     update_scenario_name(scenario_id, new_sname.strip())
                     st.session_state["scenario_renamed"]      = True
                     st.session_state["scenario_renamed_name"] = f"Renamed to '{new_sname.strip()}'."
-                    st.rerun(scope="app")
+                    st.rerun()
                 else:
                     st.warning("Name cannot be empty.")
         with col_b:
@@ -700,10 +699,11 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                 all_s      = get_scenarios(release_id)
                 next_order = max((s["sort_order"] for s in all_s), default=0) + 1
                 new_name   = f"{scenario['name']} (copy)"
-                duplicate_scenario(scenario, new_name, next_order)
+                new_id     = duplicate_scenario(scenario, new_name, next_order)
+                st.session_state[f"current_scenario_{release_id}"] = new_id
                 st.session_state["scenario_duplicated"]      = True
                 st.session_state["scenario_duplicated_name"] = f"Duplicated as '{new_name}'."
-                st.rerun(scope="app")
+                st.rerun()
         with col_c:
             st.markdown("&nbsp;", unsafe_allow_html=True)
             if total_scenarios > 1:
@@ -1349,29 +1349,64 @@ def page_estimation():
     # ── Scenarios ─────────────────────────────────────────────────────────────
     scenarios = get_scenarios(release_id)
 
-    col_sc, col_sc_new = st.columns([5, 1])
-    col_sc.subheader("Scenarios")
+    if not scenarios:
+        st.info("No scenarios yet.")
+        col_sc, col_sc_new = st.columns([5, 1])
+        col_sc.subheader("Scenarios")
+        with col_sc_new:
+            if st.button("+ New Scenario", use_container_width=True):
+                next_order = 0
+                new_name   = "Scenario 1"
+                new_id = create_scenario(release_id, new_name, next_order, defaults={
+                    "sprint_weeks":       team_cfg.get("default_sprint_weeks"),
+                    "confidence_label":   team_cfg.get("default_confidence_label"),
+                    "desired_confidence": team_cfg.get("default_desired_confidence"),
+                })
+                st.session_state[f"current_scenario_{release_id}"] = new_id
+                st.session_state["scenario_created"]      = True
+                st.session_state["scenario_created_name"] = f"'{new_name}' created."
+                st.rerun()
+        return
+
+    # Resolve current scenario selection
+    current_sid = st.session_state.get(f"current_scenario_{release_id}")
+    if not current_sid or not any(s["id"] == current_sid for s in scenarios):
+        current_sid = scenarios[0]["id"]
+        st.session_state[f"current_scenario_{release_id}"] = current_sid
+
+    # Scenario selector header row
+    col_sc_hdr, col_sc_sel, col_sc_new = st.columns([2, 4, 1], vertical_alignment="bottom")
+    col_sc_hdr.subheader("Scenarios")
+    with col_sc_sel:
+        scenario_names = [s["name"] for s in scenarios]
+        current_idx    = next((i for i, s in enumerate(scenarios) if s["id"] == current_sid), 0)
+        sel_idx = st.selectbox(
+            "Select Scenario",
+            range(len(scenario_names)),
+            format_func=lambda i: scenario_names[i],
+            index=current_idx,
+            label_visibility="collapsed",
+            key=f"scenario_sel_{release_id}",
+        )
+        if scenarios[sel_idx]["id"] != current_sid:
+            st.session_state[f"current_scenario_{release_id}"] = scenarios[sel_idx]["id"]
+            st.rerun()
     with col_sc_new:
         if st.button("+ New Scenario", use_container_width=True):
             next_order = max((s["sort_order"] for s in scenarios), default=-1) + 1
             new_name   = f"Scenario {next_order + 1}"
-            create_scenario(release_id, new_name, next_order, defaults={
+            new_id = create_scenario(release_id, new_name, next_order, defaults={
                 "sprint_weeks":       team_cfg.get("default_sprint_weeks"),
                 "confidence_label":   team_cfg.get("default_confidence_label"),
                 "desired_confidence": team_cfg.get("default_desired_confidence"),
             })
+            st.session_state[f"current_scenario_{release_id}"] = new_id
             st.session_state["scenario_created"]      = True
             st.session_state["scenario_created_name"] = f"'{new_name}' created."
             st.rerun()
 
-    if not scenarios:
-        st.info("No scenarios yet.")
-        return
-
-    tabs = st.tabs([s["name"] for s in scenarios])
-    for tab, scenario in zip(tabs, scenarios):
-        with tab:
-            _render_scenario(scenario, release, len(scenarios), unit_label)
+    selected_scenario = scenarios[sel_idx]
+    _render_scenario(selected_scenario, release, len(scenarios), unit_label)
 
     # ── Comparison table ──────────────────────────────────────────────────────
     if len(scenarios) > 1:
