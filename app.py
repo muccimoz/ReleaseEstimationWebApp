@@ -835,7 +835,17 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
         col1, col2 = st.columns(2)
         col1.write(f"PERT weighted mean velocity: {result['pert_mean']:.1f} {unit_label}/sprint")
         col1.write(f"Statistical std deviation: {result['std_dev']:.2f}")
-        col1.write(f"Guaranteed minimum velocity: {result['guaranteed_min']:.2f} {unit_label}/sprint")
+        col1.metric(
+            "Velocity at selected confidence",
+            f"{result['guaranteed_min']:.2f} {unit_label}/sprint",
+            help=(
+                "The velocity the model assumes your team will meet or exceed at your chosen "
+                "confidence level. At 80%, this is the velocity your team would achieve or beat "
+                "in 80 out of 100 similar sprints. It moves directly with the "
+                "Confidence in Projected Date slider — higher confidence produces a lower, "
+                "more conservative figure."
+            ),
+        )
         col2.write(f"Raw sprints needed: {result['sprints_raw']:.2f}")
         col2.write(f"Sprint completed in: Sprint {result['sprints_rounded']}")
         col2.write(f"Total calendar days: {result['total_days']}")
