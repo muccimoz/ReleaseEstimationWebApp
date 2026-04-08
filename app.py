@@ -594,6 +594,26 @@ def _chart_scenario_comparison(rows: list) -> go.Figure:
 
 
 # ── Scenario render helpers ───────────────────────────────────────────────────
+
+@st.dialog("Delete Scenario")
+def _dialog_delete_scenario():
+    scenario_id   = st.session_state.get("_del_scenario_id")
+    scenario_name = st.session_state.get("_del_scenario_name", "this scenario")
+    st.warning(f"Delete **{scenario_name}**? This cannot be undone.")
+    ca, cb = st.columns(2)
+    if ca.button("Yes, delete", key="dialog_yes_del"):
+        delete_scenario(scenario_id)
+        st.session_state.pop("_del_scenario_id",   None)
+        st.session_state.pop("_del_scenario_name", None)
+        st.session_state["scenario_deleted"]      = True
+        st.session_state["scenario_deleted_name"] = f"Scenario '{scenario_name}' deleted."
+        st.rerun()
+    if cb.button("Cancel", key="dialog_cancel_del"):
+        st.session_state.pop("_del_scenario_id",   None)
+        st.session_state.pop("_del_scenario_name", None)
+        st.rerun()
+
+
 def _confidence_at_target_date(
     most_likely, worst_case, best_case, confidence_label,
     backlog, sprint_weeks, start_date, std_dev_override, extra_days,
@@ -633,19 +653,9 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
     scenario_id = scenario["id"]
     release_id  = release["id"]
 
-    # Delete confirmation — rendered at tab level so it's always visible
-    if st.session_state.get(f"confirm_del_s_{scenario_id}"):
-        st.warning(f"Delete **{scenario['name']}**? This cannot be undone.")
-        ca, cb = st.columns(2)
-        if ca.button("Yes, delete", key=f"yes_del_s_{scenario_id}"):
-            delete_scenario(scenario_id)
-            st.session_state.pop(f"confirm_del_s_{scenario_id}", None)
-            st.session_state["scenario_deleted"]      = True
-            st.session_state["scenario_deleted_name"] = f"Scenario '{scenario['name']}' deleted."
-            st.rerun()
-        if cb.button("Cancel", key=f"no_del_s_{scenario_id}"):
-            st.session_state.pop(f"confirm_del_s_{scenario_id}", None)
-            st.rerun()
+    # Delete confirmation — shown as a modal dialog
+    if st.session_state.get("_del_scenario_id") == scenario_id:
+        _dialog_delete_scenario()
 
     # Manage scenario
     with st.expander("Manage Scenario"):
@@ -674,7 +684,8 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
             st.markdown("&nbsp;", unsafe_allow_html=True)
             if total_scenarios > 1:
                 if st.button("Delete", key=f"del_s_{scenario_id}"):
-                    st.session_state[f"confirm_del_s_{scenario_id}"] = True
+                    st.session_state["_del_scenario_id"]   = scenario_id
+                    st.session_state["_del_scenario_name"] = scenario["name"]
                     st.rerun()
             else:
                 st.caption("Cannot delete the only scenario.")
