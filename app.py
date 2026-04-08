@@ -630,11 +630,11 @@ def _dialog_delete_scenario():
         st.session_state.pop("_del_scenario_name", None)
         st.session_state["scenario_deleted"]      = True
         st.session_state["scenario_deleted_name"] = f"Scenario '{scenario_name}' deleted."
-        st.rerun()
+        st.rerun(scope="app")
     if cb.button("Cancel", key="dialog_cancel_del"):
         st.session_state.pop("_del_scenario_id",   None)
         st.session_state.pop("_del_scenario_name", None)
-        st.rerun()
+        st.rerun(scope="app")
 
 
 def _confidence_at_target_date(
@@ -671,6 +671,7 @@ def _confidence_at_target_date(
     return lo
 
 
+@st.fragment
 def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_label: str = "points"):
     """Render inputs and results for a single scenario tab."""
     scenario_id = scenario["id"]
@@ -690,7 +691,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                     update_scenario_name(scenario_id, new_sname.strip())
                     st.session_state["scenario_renamed"]      = True
                     st.session_state["scenario_renamed_name"] = f"Renamed to '{new_sname.strip()}'."
-                    st.rerun()
+                    st.rerun(scope="app")
                 else:
                     st.warning("Name cannot be empty.")
         with col_b:
@@ -702,7 +703,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                 duplicate_scenario(scenario, new_name, next_order)
                 st.session_state["scenario_duplicated"]      = True
                 st.session_state["scenario_duplicated_name"] = f"Duplicated as '{new_name}'."
-                st.rerun()
+                st.rerun(scope="app")
         with col_c:
             st.markdown("&nbsp;", unsafe_allow_html=True)
             if total_scenarios > 1:
