@@ -840,7 +840,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
         col1.write(f"PERT weighted mean velocity: {result['pert_mean']:.1f} {unit_label}/sprint")
         col1.write(f"Statistical std deviation: {result['std_dev']:.2f}")
         col1.markdown(
-            f'Velocity at selected confidence: {result["guaranteed_min"]:.2f} {unit_label}/sprint '
+            f'Velocity at selected confidence: {result["guaranteed_min"]:.1f} {unit_label}/sprint '
             f'<span title="The velocity the model assumes your team will meet or exceed at your '
             f'chosen confidence level. At 80%, this is the velocity your team would achieve or '
             f'beat in 80 out of 100 similar sprints. Moves directly with the Confidence in '
@@ -937,14 +937,14 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                     )
                     if velocity_needed <= current_min:
                         st.success(
-                            f"Your current guaranteed minimum ({current_min:.1f} {unit_label}/sprint) "
-                            "already meets this target."
+                            f"Your current velocity at selected confidence "
+                            f"({current_min:.1f} {unit_label}/sprint) already meets this target."
                         )
                     else:
                         st.warning(
-                            f"Your team needs {velocity_needed:.1f} {unit_label}/sprint guaranteed — "
-                            f"{velocity_needed - current_min:.1f} more than your current minimum of "
-                            f"{current_min:.1f}."
+                            f"Your team needs {velocity_needed:.1f} {unit_label}/sprint — "
+                            f"{velocity_needed - current_min:.1f} more than the current "
+                            f"velocity at selected confidence ({current_min:.1f})."
                         )
 
 
