@@ -128,9 +128,9 @@ def clear_session():
     for key in ["access_token", "refresh_token", "expires_at", "user_id", "user_email",
                 "current_team_id", "current_team_name", "page", "supabase_client", "session_id"]:
         st.session_state.pop(key, None)
-    # Clear unsaved widget buffers so edits don't survive a logout
+    # Clear unsaved widget buffers and scenario selector state so they don't survive a logout
     for key in list(st.session_state.keys()):
-        if key.startswith("_widget_buf_"):
+        if key.startswith("_widget_buf_") or key.startswith("scenario_sel_"):
             del st.session_state[key]
 
 
@@ -714,6 +714,11 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                     update_scenario_name(scenario_id, new_sname.strip())
                     st.session_state["scenario_renamed"]      = True
                     st.session_state["scenario_renamed_name"] = f"Renamed to '{new_sname.strip()}'."
+                    # Bump the selectbox version so Streamlit re-initialises the
+                    # widget and the collapsed label shows the new name immediately.
+                    _v = st.session_state.get(f"scenario_sel_v_{release_id}", 0)
+                    st.session_state[f"scenario_sel_v_{release_id}"] = _v + 1
+                    st.session_state[f"scenario_sel_{release_id}_v{_v + 1}"] = scenario_id
                     st.rerun()
                 else:
                     st.warning("Name cannot be empty.")
@@ -1396,23 +1401,26 @@ def page_estimation():
         return
 
     # Scenario navigation — selectbox stores scenario ID (not integer index) so
-    # that renaming a scenario never produces a stale label in the collapsed view.
-    # format_func reads from a dict rebuilt on every render, always returning the
-    # current name for a given ID.
+    # that renaming never produces a stale label. A version counter in the key
+    # forces Streamlit to re-initialise the widget after a rename, which is the
+    # only reliable way to refresh the collapsed label display.
     nav_to_sid = st.session_state.pop(f"_nav_to_scenario_{release_id}", None)
 
     scenario_name_by_id = {s["id"]: s["name"] for s in scenarios}
     scenario_ids        = [s["id"] for s in scenarios]
 
+    sel_version = st.session_state.get(f"scenario_sel_v_{release_id}", 0)
+    sel_key     = f"scenario_sel_{release_id}_v{sel_version}"
+
     # Programmatic navigation (create / duplicate) — set target ID before render
     if nav_to_sid and nav_to_sid in scenario_name_by_id:
-        st.session_state[f"scenario_sel_{release_id}"] = nav_to_sid
+        st.session_state[sel_key] = nav_to_sid
 
     # Validate stored selection — fall back to first if deleted or absent
-    stored_sid = st.session_state.get(f"scenario_sel_{release_id}")
+    stored_sid = st.session_state.get(sel_key)
     if stored_sid not in scenario_name_by_id:
         stored_sid = scenario_ids[0]
-        st.session_state[f"scenario_sel_{release_id}"] = stored_sid
+        st.session_state[sel_key] = stored_sid
 
     st.session_state[f"current_scenario_{release_id}"] = stored_sid
 
@@ -1425,7 +1433,7 @@ def page_estimation():
             options=scenario_ids,
             format_func=lambda sid: scenario_name_by_id[sid],
             label_visibility="collapsed",
-            key=f"scenario_sel_{release_id}",
+            key=sel_key,
         )
     with col_sc_new:
         if st.button("+ New Scenario", use_container_width=True):
