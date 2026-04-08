@@ -491,8 +491,9 @@ def delete_scenario(scenario_id: str):
 def save_scenario_by_id(scenario_id: str, data: dict):
     try:
         db().table("scenarios").update(data).eq("id", scenario_id).execute()
-    except Exception:
-        pass
+        return None
+    except Exception as e:
+        return str(e)
 
 
 # ── Chart helpers ─────────────────────────────────────────────────────────────
@@ -804,7 +805,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
         std_dev_override = sdo_val if sdo_val > 0 else None
 
     if st.button("Save Changes", key=f"save_{scenario_id}"):
-        save_scenario_by_id(scenario_id, {
+        err = save_scenario_by_id(scenario_id, {
             "sprint_weeks":       sprint_weeks,
             "backlog":            backlog,
             "start_date":         str(start_date),
@@ -816,7 +817,10 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
             "std_dev_override":   std_dev_override,
             "extra_days":         extra_days,
         })
-        st.toast("Changes saved.")
+        if err:
+            st.error(f"Save failed: {err}")
+        else:
+            st.toast("Changes saved.")
 
     # Validation
     st.divider()
