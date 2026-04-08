@@ -596,16 +596,17 @@ def _chart_scenario_comparison(rows: list) -> go.Figure:
 
 # ── Scenario render helpers ───────────────────────────────────────────────────
 
-def _buffer_scenario_widgets(scenario_id: str):
-    """Snapshot current widget values before switching away so unsaved edits survive."""
+def _sync_scenario_buffer(scenario_id: str):
+    """Mirror current widget values into a buffer so they survive scenario switches.
+    Called after _render_scenario — all input widgets are always rendered so their
+    keys are always available in session state at this point.
+    """
     prefixes = ["sw", "bl", "sd", "wc", "ml", "bc", "cl", "dc", "ed", "sdo"]
-    buffer = {
+    st.session_state[f"_widget_buf_{scenario_id}"] = {
         f"{p}_{scenario_id}": st.session_state[f"{p}_{scenario_id}"]
         for p in prefixes
         if f"{p}_{scenario_id}" in st.session_state
     }
-    if buffer:
-        st.session_state[f"_widget_buf_{scenario_id}"] = buffer
 
 @st.dialog("Delete Release")
 def _dialog_delete_release():
@@ -688,10 +689,11 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
     scenario_id = scenario["id"]
     release_id  = release["id"]
 
-    # Restore any buffered unsaved edits (e.g. after switching scenarios and returning)
-    buf = st.session_state.pop(f"_widget_buf_{scenario_id}", None)
-    if buf:
-        for key, val in buf.items():
+    # Restore widget keys from buffer for any that Streamlit cleared while this
+    # scenario was not rendered (i.e. after switching away and returning).
+    buf = st.session_state.get(f"_widget_buf_{scenario_id}", {})
+    for key, val in buf.items():
+        if key not in st.session_state:
             st.session_state[key] = val
 
     # Delete confirmation — shown as a modal dialog
@@ -837,7 +839,6 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
         if err:
             st.error(f"Save failed: {err}")
         else:
-            st.session_state.pop(f"_widget_buf_{scenario_id}", None)
             st.toast("Changes saved.")
 
     # Validation
@@ -1424,7 +1425,6 @@ def page_estimation():
             key=f"scenario_sel_{release_id}",
         )
         if sel_idx != current_idx:
-            _buffer_scenario_widgets(current_sid)
             st.session_state[f"current_scenario_{release_id}"] = scenarios[sel_idx]["id"]
             st.rerun()
     with col_sc_new:
@@ -1443,6 +1443,7 @@ def page_estimation():
 
     selected_scenario = scenarios[sel_idx]
     _render_scenario(selected_scenario, release, len(scenarios), unit_label)
+    _sync_scenario_buffer(selected_scenario["id"])
 
     # ── Comparison table ──────────────────────────────────────────────────────
     if len(scenarios) > 1:
