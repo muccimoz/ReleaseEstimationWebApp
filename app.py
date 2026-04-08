@@ -714,6 +714,7 @@ def _render_scenario(scenario: dict, release: dict, total_scenarios: int, unit_l
                     update_scenario_name(scenario_id, new_sname.strip())
                     st.session_state["scenario_renamed"]      = True
                     st.session_state["scenario_renamed_name"] = f"Renamed to '{new_sname.strip()}'."
+                    st.session_state.pop(f"scenario_sel_{release_id}", None)
                     st.rerun()
                 else:
                     st.warning("Name cannot be empty.")
