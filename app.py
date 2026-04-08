@@ -1372,8 +1372,11 @@ def page_estimation():
     # Programmatic navigation (create, duplicate) uses a one-time _nav flag to
     # override widget state without clobbering user selections on normal reruns.
     nav_to_sid = st.session_state.pop(f"_nav_to_scenario_{release_id}", None)
-    widget_idx = st.session_state.get(f"scenario_sel_{release_id}", 0)
-    widget_idx = min(widget_idx, len(scenarios) - 1)
+    try:
+        widget_idx = int(st.session_state.get(f"scenario_sel_{release_id}", 0) or 0)
+    except (TypeError, ValueError):
+        widget_idx = 0
+    widget_idx = max(0, min(widget_idx, len(scenarios) - 1))
 
     if nav_to_sid:
         nav_idx = next((i for i, s in enumerate(scenarios) if s["id"] == nav_to_sid), None)
