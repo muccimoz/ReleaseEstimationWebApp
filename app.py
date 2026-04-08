@@ -1375,11 +1375,15 @@ def page_estimation():
         st.session_state[f"current_scenario_{release_id}"] = current_sid
 
     # Scenario selector header row
+    scenario_names = [s["name"] for s in scenarios]
+    current_idx    = next((i for i, s in enumerate(scenarios) if s["id"] == current_sid), 0)
+
+    # Sync widget state to current_sid so programmatic navigation (create, duplicate) takes effect
+    st.session_state[f"scenario_sel_{release_id}"] = current_idx
+
     col_sc_hdr, col_sc_sel, col_sc_new = st.columns([2, 4, 1], vertical_alignment="bottom")
     col_sc_hdr.subheader("Scenarios")
     with col_sc_sel:
-        scenario_names = [s["name"] for s in scenarios]
-        current_idx    = next((i for i, s in enumerate(scenarios) if s["id"] == current_sid), 0)
         sel_idx = st.selectbox(
             "Select Scenario",
             range(len(scenario_names)),
@@ -1388,7 +1392,7 @@ def page_estimation():
             label_visibility="collapsed",
             key=f"scenario_sel_{release_id}",
         )
-        if scenarios[sel_idx]["id"] != current_sid:
+        if sel_idx != current_idx:
             st.session_state[f"current_scenario_{release_id}"] = scenarios[sel_idx]["id"]
             st.rerun()
     with col_sc_new:
