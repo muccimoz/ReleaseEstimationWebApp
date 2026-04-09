@@ -576,10 +576,11 @@ def _chart_confidence_curve(most_likely, worst_case, best_case, confidence_label
 
 
 def _chart_scenario_comparison(rows: list) -> go.Figure:
-    """Horizontal bar chart — business weeks per scenario."""
-    names = [r["Scenario"] for r in rows]
-    weeks = [r["_weeks"] for r in rows]
-    dates = [r["Projected Date"] for r in rows]
+    """Horizontal bar chart — business weeks per scenario, longest at top."""
+    sorted_rows = sorted(rows, key=lambda r: r["_weeks"], reverse=True)
+    names = [r["Scenario"] for r in sorted_rows]
+    weeks = [r["_weeks"] for r in sorted_rows]
+    dates = [r["Projected Date"] for r in sorted_rows]
 
     fig = go.Figure(go.Bar(
         x=weeks, y=names, orientation="h",
@@ -592,6 +593,7 @@ def _chart_scenario_comparison(rows: list) -> go.Figure:
         title="Business Weeks to Completion by Scenario",
         xaxis_title="Business Weeks", yaxis_title="",
         xaxis_range=[0, max_weeks * 1.5],
+        yaxis=dict(autorange="reversed"),
         height=max(200, 60 * len(rows) + 80),
         margin=dict(l=10, r=20, t=50, b=40),
     )
